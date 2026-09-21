@@ -45,15 +45,14 @@ Saldos calculados, no guardados:
   date: "2026-09-21",
   note: "",
   // solo type === 'loan':
-  dueDate: "",         // ISO opcional; vencido si balance > 0 && dueDate < hoy
-  repayments: [],      // [{ date, amount, movementId }] — abonos recibidos
-  settled: false,      // true cuando la suma de repayments >= amount (se marca sola)
+  dueDate: "",         // ISO opcional; vencido si saldo > 0 && dueDate < hoy
   // solo type === 'repay':
   loanId: ""           // a qué préstamo abona
 }
 ```
-- Un movimiento `repay` siempre apunta a un `loan` del mismo fondo. Al guardarlo se agrega a `loan.repayments` y, si el saldo llega a 0, `settled = true`. Al borrar o editar el `repay`, se recalcula (simétrico, como `deletePayment` en Facturas).
-- `normalizeMovements()` fuerza `amount`, `repayments[].amount` a `Number` (mismo rol que `normalizeInvoices`).
+- Un movimiento `repay` siempre apunta a un `loan` del mismo fondo. **Nada derivado se guarda**: el saldo de un préstamo (`loanBalance(loan)` = monto − suma de sus `repay`) y si está "devuelto" (`isLoanSettled`) se calculan siempre al vuelo — así borrar o editar una devolución nunca deja un préstamo desincronizado.
+- Borrar un préstamo borra también sus devoluciones (quedarían apuntando a nada). Editar un préstamo que ya tiene devoluciones no permite cambiarle el tipo.
+- `normalizeMovements()` fuerza `amount` a `Number` y `type` a uno válido (mismo rol que `normalizeInvoices`).
 
 ## Pantallas (4 pestañas abajo: Fondos · Movimientos · Resumen · Ajustes)
 
