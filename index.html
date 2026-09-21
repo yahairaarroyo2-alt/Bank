@@ -2899,8 +2899,6 @@
     });
 
     let _currentUser = null;
-    const _invRef  = () => _db.collection('users').doc(_currentUser.uid).collection('invoices');
-    const _setRef  = () => _db.collection('users').doc(_currentUser.uid).collection('settings').doc('main');
 
     // ── Login / Logout ──
     function showLoginScreen() {
@@ -3103,29 +3101,40 @@
       }
     }
 
-    // ── Firestore sync helpers ──
-    // Con la persistencia offline habilitada (ver enablePersistence), sin conexión esta
-    // promesa se queda pendiente hasta reconectar — no cae en este catch. Si SÍ cae acá
-    // es un error real (permisos, factura corrupta, etc.), no simplemente "sin señal",
-    // así que vale la pena avisar en vez de solo dejarlo en consola.
-    function _syncInvoice(inv) {
+    // ── Firestore sync (Bank) ──
+    const _fundRef = () => _db.collection('users').doc(_currentUser.uid).collection('funds');
+    const _movRef  = () => _db.collection('users').doc(_currentUser.uid).collection('movements');
+    const _setRef  = () => _db.collection('users').doc(_currentUser.uid).collection('settings').doc('main');
+
+    // Con la persistencia offline habilitada, sin conexión estas promesas quedan pendientes
+    // hasta reconectar — no caen en el catch. Si SÍ caen es un error real (permisos, doc
+    // corrupto), por eso se avisa con toast.
+    function _cloudSet(ref, obj, what) {
       if (!_currentUser) return;
-      const clean = JSON.parse(JSON.stringify(inv));
-      _invRef().doc(clean.id).set(clean).catch(e => {
-        console.warn('syncInv:', e);
-        showToast('No se pudo sincronizar la factura con la nube: ' + e.message, 'error', { duration: 5000 });
+      ref().doc(obj.id).set(JSON.parse(JSON.stringify(obj))).catch(e => {
+        console.warn('sync ' + what + ':', e);
+        showToast('No se pudo sincronizar ' + what + ' con la nube: ' + e.message, 'error', { duration: 5000 });
       });
     }
-    function _deleteInvoiceCloud(id) {
+    function _cloudDelete(ref, id, what) {
       if (!_currentUser) return;
-      _invRef().doc(id).delete().catch(e => {
-        console.warn('delInv:', e);
-        showToast('No se pudo borrar la factura en la nube: ' + e.message, 'error', { duration: 5000 });
+      ref().doc(id).delete().catch(e => {
+        console.warn('del ' + what + ':', e);
+        showToast('No se pudo borrar ' + what + ' en la nube: ' + e.message, 'error', { duration: 5000 });
       });
     }
-    // Ejecuta una lista de operaciones de batch en tandas de 450 (el límite real de
-    // Firestore es 500 por batch) — sin esto, una acción en lote sobre más de 500
-    // facturas fallaba entera y silenciosa.
+    function _syncMovement(m)        { _cloudSet(_movRef, m, 'el movimiento'); }
+    function _syncFund(f)            { _cloudSet(_fundRef, f, 'el fondo'); }
+    function _deleteMovementCloud(id){ _cloudDelete(_movRef, id, 'el movimiento'); }
+    function _deleteFundCloud(id)    { _cloudDelete(_fundRef, id, 'el fondo'); }
+    function _syncSettings() {
+      if (!_currentUser) return;
+      _setRef().set({ profile: PROFILE, homeTab: _getHomeTab() }).catch(e => {
+        console.warn('syncSet:', e);
+        showToast('No se pudo sincronizar con la nube: ' + e.message, 'error', { duration: 5000 });
+      });
+    }
+    // Ejecuta una lista de operaciones de batch en tandas de 450 (límite real de Firestore: 500).
     async function _commitOpsInChunks(ops) {
       for (let i = 0; i < ops.length; i += 450) {
         const batch = _db.batch();
@@ -3133,211 +3142,85 @@
         await batch.commit();
       }
     }
-    // Sube varias facturas en un solo batch — evita N escrituras sueltas cuando
-    // una acción en lote (marcar pagadas, etc.) toca varias facturas a la vez.
-    function _syncInvoicesBatch(invs) {
-      if (!_currentUser || invs.length === 0) return;
-      _commitOpsInChunks(invs.map(inv => b => b.set(_invRef().doc(inv.id), JSON.parse(JSON.stringify(inv))))).catch(e => {
-        console.warn('syncBatch:', e);
-        showToast('No se pudo sincronizar la acción en lote con la nube: ' + e.message, 'error', { duration: 5000 });
-      });
+    // Borra TODO en Firestore y re-sube lo local — solo tras import/restore.
+    async function _replaceFirestoreAll() {
+      if (!_currentUser) return;
+      try {
+        const [fs, ms] = await Promise.all([_fundRef().get(), _movRef().get()]);
+        const ops = fs.docs.map(d => b => b.delete(d.ref))
+          .concat(ms.docs.map(d => b => b.delete(d.ref)))
+          .concat(funds.map(f => b => b.set(_fundRef().doc(f.id), f)))
+          .concat(movements.map(m => b => b.set(_movRef().doc(m.id), m)));
+        await _commitOpsInChunks(ops);
+      } catch (e) { console.warn('replaceFirestore:', e); }
     }
 
-    let _unsubInvoices = null, _unsubSettings = null, _unsubLogo = null;
-    const _logoRef = () => _db.collection('users').doc(_currentUser.uid).collection('settings').doc('logo');
+    let _unsubFunds = null, _unsubMovements = null, _unsubSettings = null;
+    // Huella de lo último procesado — el primer disparo de onSnapshot al conectar trae lo MISMO
+    // que _loadFromFirestore() acaba de bajar; sin comparar, repintaba todo por nada.
+    let _lastFundsFingerprint = null, _lastMovementsFingerprint = null;
 
     function _stopRealtimeSync() {
-      if (_unsubInvoices) { _unsubInvoices(); _unsubInvoices = null; }
-      if (_unsubSettings) { _unsubSettings(); _unsubSettings = null; }
-      if (_unsubLogo) { _unsubLogo(); _unsubLogo = null; }
+      [_unsubFunds, _unsubMovements, _unsubSettings].forEach(u => { if (u) u(); });
+      _unsubFunds = _unsubMovements = _unsubSettings = null;
     }
-
-    // Engancha los listeners en vivo — separado de _startRealtimeSync() para que
-    // reconectar tras un backgrounding largo (ver visibilitychange más abajo) no
-    // repita la descarga completa de _loadFromFirestore(): onSnapshot ya entrega
-    // la colección completa en su primer disparo.
+    // Merge local↔nube de UNA colección: la nube gana en mismo id; lo que solo existe local se sube.
+    async function _mergeCollection(ref, local, normalize) {
+      const cloud = (await ref().get()).docs.map(d => d.data());
+      if (cloud.length === 0) {
+        if (local.length) await _commitOpsInChunks(local.map(x => b => b.set(ref().doc(x.id), x)));
+        return local;
+      }
+      const merged = new Map();
+      local.forEach(x => merged.set(x.id, x));
+      cloud.forEach(x => merged.set(x.id, x));
+      const cloudIds = new Set(cloud.map(x => x.id));
+      const localOnly = local.filter(x => !cloudIds.has(x.id));
+      if (localOnly.length) await _commitOpsInChunks(localOnly.map(x => b => b.set(ref().doc(x.id), x)));
+      return normalize(Array.from(merged.values()));
+    }
+    async function _loadFromFirestore() {
+      try {
+        funds = await _mergeCollection(_fundRef, funds, normalizeFunds); saveFunds();
+        movements = _sortMovements(await _mergeCollection(_movRef, movements, normalizeMovements)); saveMovements();
+        _lastFundsFingerprint = JSON.stringify(funds);
+        _lastMovementsFingerprint = JSON.stringify(movements);
+        const sSnap = await _setRef().get();
+        if (sSnap.exists) _applyCloudSettings(sSnap.data());
+        else _syncSettings();
+      } catch (e) { console.warn('_loadFromFirestore:', e); }
+    }
+    function _applyCloudSettings(s) {
+      if (s.profile && typeof s.profile === 'object') { PROFILE = { name: '', ...s.profile }; safeSetItem('bank_profile', JSON.stringify(PROFILE)); }
+      if (s.homeTab === 'funds' || s.homeTab === 'history') safeSetItem('bank_home_tab', s.homeTab);
+    }
+    // Engancha los listeners en vivo — separado de _startRealtimeSync() para reconectar tras
+    // un backgrounding largo sin repetir la descarga completa.
     function _attachRealtimeListeners() {
-      _unsubInvoices = _invRef().onSnapshot(snapshot => {
-        // El eco de nuestra propia escritura (todavía sin confirmar por el servidor)
-        // dispara este mismo snapshot con hasPendingWrites=true — el estado local ya
-        // se actualizó y renderizó cuando se hizo el cambio, así que reprocesar y
-        // re-renderizar TODO el historial acá es puro trabajo de sobra.
-        if (snapshot.metadata.hasPendingWrites) return;
-        const fresh = normalizeInvoices(snapshot.docs.map(d => d.data())).sort((a, b) => (b.number || 0) - (a.number || 0));
-        const fingerprint = JSON.stringify(fresh);
-        if (fingerprint === _lastInvoicesFingerprint) return;  // nada cambió de verdad — ver comentario en la declaración
-        _lastInvoicesFingerprint = fingerprint;
-        invoices = fresh;
-        saveInvoices();
-        filterInvoices();   // ya llama a renderHistory() por dentro
-      }, e => console.warn('invoices snapshot:', e));
-
+      _unsubFunds = _fundRef().onSnapshot(snap => {
+        if (snap.metadata.hasPendingWrites) return;   // eco de nuestra propia escritura
+        const fresh = normalizeFunds(snap.docs.map(d => d.data()));
+        const fp = JSON.stringify(fresh);
+        if (fp === _lastFundsFingerprint) return;
+        _lastFundsFingerprint = fp;
+        funds = fresh; saveFunds(); _refreshCurrentView();
+      }, e => console.warn('funds snapshot:', e));
+      _unsubMovements = _movRef().onSnapshot(snap => {
+        if (snap.metadata.hasPendingWrites) return;
+        const fresh = _sortMovements(normalizeMovements(snap.docs.map(d => d.data())));
+        const fp = JSON.stringify(fresh);
+        if (fp === _lastMovementsFingerprint) return;
+        _lastMovementsFingerprint = fp;
+        movements = fresh; saveMovements(); _refreshCurrentView();
+      }, e => console.warn('movements snapshot:', e));
       _unsubSettings = _setRef().onSnapshot(snap => {
-        if (!snap.exists) return;
-        const s = snap.data();
-        if (typeof s.nextNum === 'number' && s.nextNum >= nextNum) {
-          nextNum = s.nextNum; nextNumBase = Math.max(nextNumBase || 300, nextNum); saveNextNum();
-        }
-        if (s.client) {
-          // No pisar el cliente en memoria mientras el formulario de factura está
-          // abierto — otro dispositivo guardando su propio "cliente por defecto" al
-          // mismo tiempo no debe cambiarle el cliente a la factura que se está
-          // editando acá. localStorage sí se actualiza siempre, para que lo próximo
-          // que abra el form (o el próximo arranque) ya vea el valor correcto.
-          if (document.getElementById('view-create')?.style.display !== 'block') client = s.client;
-          safeSetItem('bank_client', JSON.stringify(s.client));
-        }
-        if (s.issuer) { ISSUER = s.issuer; safeSetItem('bank_issuer', JSON.stringify(ISSUER)); }
-        if (Array.isArray(s.templates)) { templates = s.templates; safeSetItem('bank_templates', JSON.stringify(templates)); }
-        if (Array.isArray(s.expenses)) {
-          expenses = s.expenses; safeSetItem('bank_expenses', JSON.stringify(expenses));
-          if (document.getElementById('view-dashboard')?.style.display === 'block') renderDashboard();
-        }
-        if (Array.isArray(s.savedClients)) { savedClients = s.savedClients; safeSetItem('bank_saved_clients', JSON.stringify(savedClients)); }
+        if (snap.exists) _applyCloudSettings(snap.data());
       }, e => console.warn('settings snapshot:', e));
-
-      // El logo vive en su propio doc — así un logo grande nunca bloquea el resto de
-      // Ajustes si se acerca al límite de 1MiB por documento de Firestore.
-      _unsubLogo = _logoRef().onSnapshot(snap => {
-        const s = snap.data();
-        const cloudLogo = s && typeof s.logo === 'string' && s.logo.startsWith('data:') ? s.logo : '';
-        if (cloudLogo !== logo) {
-          logo = cloudLogo;
-          _lastSyncedLogo = logo;
-          if (logo) { safeSetItem('bank_logo', logo); safeSetItem('bank_logo_nobg', '1'); }
-          else localStorage.removeItem('bank_logo');
-          if (document.getElementById('view-create')?.style.display === 'block') renderCreateForm();
-        }
-      }, e => console.warn('logo snapshot:', e));
     }
-
     async function _startRealtimeSync() {
       _stopRealtimeSync();
       await _loadFromFirestore();
       _attachRealtimeListeners();
-    }
-
-    // Recuerda el último logo que ya se subió — sin esto, _syncSettings() (llamada en
-    // CADA guardado de ajustes/factura) reenviaba el logo completo (hasta 1MB en base64)
-    // aunque no hubiera cambiado.
-    let _lastSyncedLogo;
-    // Huella del último array de facturas ya procesado por el listener en vivo — el
-    // primer disparo de onSnapshot al conectar/reconectar casi siempre trae EXACTAMENTE
-    // lo mismo que _loadFromFirestore() acababa de bajar momentos antes (Firestore
-    // entrega su caché local de inmediato al suscribirse); sin comparar, eso disparaba
-    // un segundo re-render completo del historial en cada arranque, por nada.
-    let _lastInvoicesFingerprint = null;
-    function _syncSettings() {
-      if (!_currentUser) return;
-      _setRef().set({ nextNum, client, issuer: ISSUER, templates, expenses, savedClients }).catch(e => {
-        console.warn('syncSet:', e);
-        showToast('No se pudo sincronizar con la nube: ' + e.message, 'error', { duration: 5000 });
-      });
-      if (logo !== _lastSyncedLogo) {
-        const toSync = logo;
-        _logoRef().set({ logo: toSync || '' })
-          .then(() => { _lastSyncedLogo = toSync; })
-          .catch(e => console.warn('syncLogo:', e));
-      }
-    }
-
-    function saveAndSyncInvoice(inv) {
-      saveInvoices();
-      _syncInvoice(inv);
-    }
-    // Replace ALL Firestore invoices with the current in-memory array.
-    // Used after import/restore so the cloud matches local exactly.
-    async function _replaceFirestoreInvoices() {
-      if (!_currentUser) return;
-      try {
-        const snap = await _invRef().get();
-        const ops = snap.docs.map(d => b => b.delete(d.ref))
-          .concat(invoices.map(inv => b => b.set(_invRef().doc(inv.id), inv)));
-        await _commitOpsInChunks(ops);
-      } catch(e) { console.warn('replaceFirestore:', e); }
-    }
-
-    async function _loadFromFirestore() {
-      try {
-        // El logo puede pesar hasta ~1MB — si ya hay uno guardado local, no hace falta
-        // volver a bajarlo acá: _attachRealtimeListeners() engancha el onSnapshot del
-        // logo justo después de esta función, y SU primer disparo ya entrega el valor
-        // actual (confirma o actualiza solo si cambió desde otro dispositivo). Sin logo
-        // local (cuenta nueva en este dispositivo) sí hace falta pedirlo ahora.
-        const needsLogoFetch = !logo;
-        const [sSnap, iSnap, lSnap] = await Promise.all([
-          _setRef().get(), _invRef().get(),
-          needsLogoFetch ? _logoRef().get() : Promise.resolve(null)
-        ]);
-        const cloudInvoices = iSnap.docs.map(d => d.data());
-
-        if (cloudInvoices.length > 0) {
-          // Merge: keep all invoices from both sides, cloud wins on same id
-          const merged = new Map();
-          invoices.forEach(inv => merged.set(inv.id, inv));
-          cloudInvoices.forEach(inv => merged.set(inv.id, inv));
-          invoices = normalizeInvoices(Array.from(merged.values())).sort((a, b) => (b.number || 0) - (a.number || 0));
-          saveInvoices();
-          // Dos dispositivos pueden crear una factura offline al mismo tiempo con el mismo
-          // número (cada uno solo conocía su propio "próximo #") — el merge de arriba
-          // conserva ambas porque tienen id distinto. No se renumera sola (el número ya
-          // pudo compartirse con el cliente por PDF/WhatsApp); solo se avisa.
-          const numCounts = new Map();
-          invoices.forEach(inv => { if (typeof inv.number === 'number') numCounts.set(inv.number, (numCounts.get(inv.number) || 0) + 1); });
-          const dupNums = [...numCounts.entries()].filter(([, c]) => c > 1).map(([n]) => n);
-          if (dupNums.length > 0) {
-            showToast(`Facturas con número repetido: #${dupNums.join(', #')} — parece que se crearon en dos dispositivos a la vez. Revísalas.`, 'error', { duration: 8000 });
-          }
-          // Upload any local-only invoices that weren't in the cloud
-          const cloudIds = new Set(cloudInvoices.map(i => i.id));
-          const localOnly = invoices.filter(i => !cloudIds.has(i.id));
-          if (localOnly.length > 0) {
-            await _commitOpsInChunks(localOnly.map(inv => b => b.set(_invRef().doc(inv.id), inv)));
-          }
-        } else if (invoices.length > 0) {
-          // Firestore empty, local has data → first login, upload everything
-          await _commitOpsInChunks(invoices.map(inv => b => b.set(_invRef().doc(inv.id), inv)));
-        }
-        // El primer disparo del onSnapshot en vivo (ver _attachRealtimeListeners) va a
-        // traer esto MISMO que recién se bajó/mergeó acá — dejar la huella lista de
-        // antemano para que ese disparo se reconozca como "nada cambió" y no repinte.
-        _lastInvoicesFingerprint = JSON.stringify(invoices);
-
-        // Settings: use cloud if available, else push local to cloud
-        if (sSnap.exists) {
-          const s = sSnap.data();
-          if (typeof s.nextNum === 'number' && s.nextNum >= nextNum) {
-            nextNum = s.nextNum; nextNumBase = Math.max(nextNumBase || 300, nextNum); saveNextNum();
-          }
-          if (s.client) { client = s.client; safeSetItem('bank_client', JSON.stringify(client)); }
-          if (s.issuer) { ISSUER = s.issuer; safeSetItem('bank_issuer', JSON.stringify(ISSUER)); }
-          if (Array.isArray(s.templates)) { templates = s.templates; safeSetItem('bank_templates', JSON.stringify(templates)); }
-          if (Array.isArray(s.expenses)) { expenses = s.expenses; safeSetItem('bank_expenses', JSON.stringify(expenses)); }
-          if (Array.isArray(s.savedClients)) { savedClients = s.savedClients; safeSetItem('bank_saved_clients', JSON.stringify(savedClients)); }
-        } else {
-          _syncSettings();
-        }
-
-        // Logo: doc propio; antes vivía en el doc de settings — si el doc nuevo aún no
-        // existe pero el viejo trae uno, se migra una sola vez. Si needsLogoFetch era
-        // false (ya había logo local), lSnap es null y esto se salta entero — el
-        // onSnapshot de _attachRealtimeListeners() se encarga de confirmarlo/migrarlo.
-        if (lSnap && lSnap.exists) {
-          const s2 = lSnap.data();
-          logo = (typeof s2.logo === 'string' && s2.logo.startsWith('data:')) ? s2.logo : '';
-          _lastSyncedLogo = logo;
-          if (logo) { safeSetItem('bank_logo', logo); safeSetItem('bank_logo_nobg', '1'); }
-          else localStorage.removeItem('bank_logo');
-        } else if (lSnap) {
-          const oldLogo = sSnap.exists && typeof sSnap.data().logo === 'string' && sSnap.data().logo.startsWith('data:') ? sSnap.data().logo : '';
-          if (oldLogo) {
-            logo = oldLogo;
-            safeSetItem('bank_logo', logo); safeSetItem('bank_logo_nobg', '1');
-          }
-          const toSync = logo;
-          _logoRef().set({ logo: toSync || '' }).then(() => { _lastSyncedLogo = toSync; }).catch(() => {});
-        }
-      } catch (e) { console.warn('_loadFromFirestore:', e); }
     }
 
     // Cierra los listeners de Firestore si la app queda en segundo plano más de 2 minutos
@@ -3350,7 +3233,7 @@
         _bgDisconnectTimer = setTimeout(() => { _stopRealtimeSync(); _bgDisconnectTimer = null; }, 120000);
       } else {
         if (_bgDisconnectTimer) { clearTimeout(_bgDisconnectTimer); _bgDisconnectTimer = null; }
-        else if (!_unsubInvoices) { _attachRealtimeListeners(); }   // se había desconectado: solo reenganchar, sin repetir la descarga completa
+        else if (!_unsubMovements) { _attachRealtimeListeners(); }   // se había desconectado: solo reenganchar, sin repetir la descarga completa
       }
     });
 
@@ -3420,6 +3303,166 @@
       address: '',
       city: ''
     };
+
+    // ═══════════════════════════ BANK: modelo ═══════════════════════════
+    const MOV_TYPES = { in: 'Meter', loan: 'Sacar prestado', repay: 'Devolver', out: 'Gastar' };
+    const MOV_SIGN  = { in: 1, loan: -1, repay: 1, out: -1 };   // efecto de cada tipo sobre "Tienes"
+    let funds = [];        // { id, name, goal, color, createdAt }
+    let movements = [];    // { id, fundId, type, amount, date, note, dueDate, loanId }  — más reciente primero
+    let PROFILE = { name: '' };
+    let dashboardFundFilter = null;   // null = todos los fondos, o id de fondo
+
+    // Solo AÑADE valores por defecto, nunca borra datos (backup viejo, doc corrupto en la nube).
+    function normalizeFunds(arr) {
+      if (!Array.isArray(arr)) return [];
+      return arr.filter(f => f && typeof f === 'object' && f.id).map(f => {
+        f.id = String(f.id);
+        if (typeof f.name !== 'string') f.name = '';
+        f.goal = Number(f.goal) || 0;
+        if (typeof f.color !== 'string') f.color = '';
+        if (typeof f.createdAt !== 'string') f.createdAt = '';
+        return f;
+      }).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '') || (a.id > b.id ? 1 : -1));
+    }
+    function normalizeMovements(arr) {
+      if (!Array.isArray(arr)) return [];
+      return arr.filter(m => m && typeof m === 'object' && m.id).map(m => {
+        m.id = String(m.id);
+        m.fundId = String(m.fundId || '');
+        if (!MOV_TYPES[m.type]) m.type = 'in';
+        m.amount = round2(m.amount);
+        if (typeof m.date !== 'string') m.date = '';
+        if (typeof m.note !== 'string') m.note = '';
+        if (typeof m.dueDate !== 'string') m.dueDate = '';
+        m.loanId = m.type === 'repay' ? String(m.loanId || '') : '';
+        return m;
+      });
+    }
+    // Orden canónico (fecha desc, luego id desc). Es el orden que se persiste y con el que se
+    // comparan las huellas del listener en vivo — cualquier array de movimientos pasa por acá.
+    function _sortMovements(arr = movements) {
+      arr.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id > a.id ? 1 : -1));
+      return arr;
+    }
+
+    // Saldo de un préstamo: monto − devoluciones que le apuntan. Se calcula siempre, no se guarda.
+    // ponytail: O(n) por préstamo → fundBalance es O(n²); con miles de movimientos, indexar repays por loanId.
+    function loanBalance(loan) {
+      const repaid = round2(movements.filter(m => m.type === 'repay' && m.loanId === loan.id).reduce((s, m) => s + m.amount, 0));
+      return { repaid, balance: round2(loan.amount - repaid) };
+    }
+    function isLoanSettled(loan) { return loanBalance(loan).balance <= 0; }
+    function isLoanOverdue(m, today = todayISO()) {
+      return m.type === 'loan' && !!m.dueDate && m.dueDate < today && !isLoanSettled(m);
+    }
+    // Tienes / Debes de un fondo (fundId null → todos los fondos juntos)
+    function fundBalance(fundId) {
+      let have = 0, owed = 0;
+      for (const m of movements) {
+        if (fundId && m.fundId !== fundId) continue;
+        have += MOV_SIGN[m.type] * m.amount;
+        if (m.type === 'loan') owed += loanBalance(m).balance;
+      }
+      return { have: round2(have), owed: round2(owed) };
+    }
+    function fundById(id) { return funds.find(f => f.id === id) || null; }
+    function fundName(id) { return fundById(id)?.name || 'Sin fondo'; }
+    // Préstamos con saldo pendiente de un fondo (para el selector de "Devolver")
+    function openLoansOf(fundId) {
+      return movements.filter(m => m.type === 'loan' && m.fundId === fundId && !isLoanSettled(m));
+    }
+    function _getHomeTab() { return localStorage.getItem('bank_home_tab') === 'history' ? 'history' : 'funds'; }
+
+    // Movimientos dentro del período (y fondo) activos del Resumen — los usan métricas, gráfica y CSV
+    function getDashboardMovements() {
+      const range = dashboardDateRange();
+      if (!range) return [];
+      return movements.filter(m => {
+        const d = new Date(m.date + 'T12:00:00');
+        if (!(d >= range.startDate && d <= range.endDate)) return false;
+        if (dashboardFundFilter && m.fundId !== dashboardFundFilter) return false;
+        return true;
+      });
+    }
+
+    // ── Carga / guardado local ──
+    function saveFunds()     { return safeSetItem('bank_funds', JSON.stringify(funds)); }
+    function saveMovements() { return safeSetItem('bank_movements', JSON.stringify(movements)); }
+    function saveProfile()   { safeSetItem('bank_profile', JSON.stringify(PROFILE)); _syncSettings(); }
+
+    // ── CRUD ──
+    function addMovement(m) {
+      m.id = Date.now().toString();
+      movements.unshift(m); _sortMovements();
+      if (!saveMovements()) { movements = movements.filter(x => x.id !== m.id); return false; }
+      _syncMovement(m);
+      return true;
+    }
+    function updateMovement(id, m) {
+      const idx = movements.findIndex(x => x.id === id);
+      if (idx === -1) return false;
+      m.id = id;
+      const before = movements.slice();   // copia de ANTES, para la copia automática
+      movements[idx] = m; _sortMovements();
+      if (!saveMovements()) { movements = before; return false; }
+      takeSnapshot('antes-de-editar-movimiento', before);
+      _syncMovement(m);
+      return true;
+    }
+    // Devuelve lo que borró (el movimiento y, si era préstamo, sus devoluciones) para poder deshacer.
+    function deleteMovementById(id) {
+      const m = movements.find(x => x.id === id);
+      if (!m) return [];
+      const ids = [id].concat(m.type === 'loan' ? movements.filter(x => x.type === 'repay' && x.loanId === id).map(x => x.id) : []);
+      const removed = movements.filter(x => ids.includes(x.id));
+      movements = movements.filter(x => !ids.includes(x.id));
+      saveMovements();
+      ids.forEach(_deleteMovementCloud);
+      return removed;
+    }
+    function addFund(f) {
+      f.id = Date.now().toString(); f.createdAt = todayISO();
+      funds.push(f);
+      if (!saveFunds()) { funds.pop(); return false; }
+      _syncFund(f);
+      return true;
+    }
+    function updateFund(id, patch) {
+      const f = fundById(id); if (!f) return false;
+      Object.assign(f, patch); saveFunds(); _syncFund(f);
+      return true;
+    }
+    function deleteFund(id) {
+      funds = funds.filter(f => f.id !== id);
+      const gone = movements.filter(m => m.fundId === id).map(m => m.id);
+      movements = movements.filter(m => m.fundId !== id);
+      saveFunds(); saveMovements();
+      _deleteFundCloud(id); gone.forEach(_deleteMovementCloud);
+    }
+
+    // Chequeo mínimo de la lógica de saldos — correr en la consola del navegador: _selfCheck()
+    function _selfCheck() {
+      const F = funds, M = movements;   // no tocar los datos reales
+      funds = [{ id: 'f1', name: 'Test', goal: 0, color: '', createdAt: '2026-01-01' }];
+      movements = [
+        { id: 'm1', fundId: 'f1', type: 'in',   amount: 1000, date: '2026-01-01', note: '', dueDate: '', loanId: '' },
+        { id: 'm2', fundId: 'f1', type: 'loan', amount: 100,  date: '2026-01-02', note: '', dueDate: '2026-01-10', loanId: '' }
+      ];
+      try {
+        let b = fundBalance('f1');
+        console.assert(b.have === 900 && b.owed === 100, 'préstamo: tienes 900 / debes 100', b);
+        console.assert(isLoanOverdue(movements[1], '2026-01-11') && !isLoanOverdue(movements[1], '2026-01-05'), 'vencido según fecha');
+        movements.push({ id: 'm3', fundId: 'f1', type: 'repay', amount: 100, date: '2026-01-03', note: '', dueDate: '', loanId: 'm2' });
+        b = fundBalance('f1');
+        console.assert(b.have === 1000 && b.owed === 0 && isLoanSettled(movements[1]), 'devolver: tienes 1000 / debes 0 / saldado', b);
+        movements.pop();
+        console.assert(fundBalance('f1').owed === 100, 'quitar la devolución vuelve a deber 100');
+        movements.push({ id: 'm4', fundId: 'f1', type: 'out', amount: 50, date: '2026-01-04', note: '', dueDate: '', loanId: '' });
+        console.assert(fundBalance('f1').have === 850 && fundBalance('f1').owed === 100, 'gastar no genera deuda');
+        console.log('_selfCheck OK');
+      } finally { funds = F; movements = M; }
+    }
+    // ═════════════════════════════════════════════════════════════════════
 
     // ── State ──
     let invoices = [];
@@ -3514,6 +3557,10 @@
       } catch { savedClients = []; }
 
       loadLogo();
+
+      try { funds = normalizeFunds(JSON.parse(localStorage.getItem('bank_funds') || '[]')); } catch (e) { console.error('bank_funds:', e); funds = []; }
+      try { movements = _sortMovements(normalizeMovements(JSON.parse(localStorage.getItem('bank_movements') || '[]'))); } catch (e) { console.error('bank_movements:', e); movements = []; }
+      try { PROFILE = { name: '', ...JSON.parse(localStorage.getItem('bank_profile') || '{}') }; } catch { PROFILE = { name: '' }; }
     }
 
     function saveExpenses() {
