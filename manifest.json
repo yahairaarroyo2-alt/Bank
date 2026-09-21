@@ -1,0 +1,29 @@
+{
+  "name": "Bank",
+  "short_name": "Bank",
+  "description": "Ahorro personal: fondos, metas y préstamos",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#c8c8d0",
+  "theme_color": "#c8c8d0",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+# Copias de seguridad locales del archivo (no subir al repo)
+*.bak
+*.bak-*
+.backups/
+
+# Sistema
+.DS_Store
+Thumbs.db
