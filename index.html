@@ -1698,6 +1698,13 @@
     .t4-client-data strong { display:block; margin-bottom:2px; }
 
     @media print { #bottom-nav { display: none; } }
+
+    /* ── Formulario de movimiento ── */
+    .mov-type-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
+    .mov-type-btn { padding:12px 8px; border-radius:14px; border:var(--lg-border); background:var(--lg-card); box-shadow:var(--lg-shadow); font-family:inherit; font-size:0.95rem; font-weight:600; color:var(--text); cursor:pointer; }
+    .mov-type-btn.active { outline:2px solid var(--blue); }
+    .mov-type-btn.in.active, .mov-type-btn.repay.active { outline-color:#2e7d32; }
+    .mov-type-btn.loan.active, .mov-type-btn.out.active { outline-color:#c0540a; }
   </style>
 </head>
 <body>
@@ -1804,31 +1811,17 @@
     </div>
   </div>
 
-  <!-- Create View -->
+  <!-- Create View (nuevo / editar movimiento) -->
   <div id="view-create">
     <div class="container">
       <div class="create-header">
         <button class="btn btn-ghost btn-sm" onclick="closeCreate(this)" aria-label="Volver" style="font-size:1.2rem;padding:6px 12px;">←</button>
-        <button id="tpl-indicator" onclick="openTemplatePicker('change', this)" style="background:var(--lg-card);border:var(--lg-border);border-radius:20px;padding:5px 12px;font-size:0.75rem;color:var(--text-light);cursor:pointer;display:flex;align-items:center;gap:5px;">
-          🎨 <span id="tpl-indicator-name">Clásico</span>
-        </button>
+        <div id="create-title" style="flex:1;font-weight:800;font-size:1.1rem;color:var(--text);">Nuevo movimiento</div>
         <div class="create-actions">
-          <button class="btn btn-success" onclick="saveCurrentInvoice(this)">Guardar</button>
-          <button class="btn btn-primary" data-action="generate-pdf" onclick="generatePDF(this)">Generar PDF</button>
+          <button class="btn btn-success" id="save-mov-btn" onclick="saveCurrentMovement(this)">Guardar</button>
         </div>
       </div>
-      <div id="invoice-form"></div>
-      <!-- Templates Panel -->
-      <div id="templates-panel" style="margin-top: 20px; padding: 16px; background: var(--lg-card); border-radius: 16px; border: var(--lg-border); box-shadow: var(--lg-shadow); display: none;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-          <h3 style="margin: 0; font-size: 1rem;">Plantillas de Items</h3>
-          <button class="btn btn-ghost btn-sm" id="templates-toggle" onclick="toggleTemplatesPanel()" title="Minimizar" aria-label="Minimizar plantillas">−</button>
-        </div>
-        <div id="templates-list" style="margin-bottom: 12px;"></div>
-        <div id="templates-empty" style="text-align: center; color: var(--text-light); padding: 12px;">
-          No hay plantillas guardadas
-        </div>
-      </div>
+      <div id="movement-form"></div>
     </div>
   </div>
 
@@ -4418,189 +4411,12 @@
       showToast(`Factura #${restored.number} restaurada`, 'success');
     }
 
-    // ── Create Form State ──
-    const EMPTY_ROW = () => ({ qty: '', description: '', dates: '', unitPrice: '', lineTotal: 0 });
-    const EMPTY_TABLE = () => ({ title: '', items: [EMPTY_ROW()] });
-    let formTables = [EMPTY_TABLE()];
-    function allFormItems() { return formTables.flatMap(t => t.items); }
-    // Solo cuenta filas CON descripción — las que de verdad terminan en la factura
-    // (buildInvoiceObject las filtra igual). Sin este mismo filtro acá, el % de
-    // impuesto se calculaba sobre filas en blanco que después no se guardaban.
-    function _formSubtotal() {
-      return allFormItems().filter(it => (it.description || '').trim() !== '').reduce((s, it) => s + (it.lineTotal || 0), 0);
-    }
-    let formDate = '';
-    // Diseño del formulario ACTUAL — separado de localStorage['bank_invoiceTemplate'] (el
-    // default para la PRÓXIMA factura nueva). Antes se leía/escribía la misma clave para
-    // las dos cosas: editar/duplicar/repetir una factura vieja con diseño "Clásico" dejaba
-    // "Clásico" como default aunque tu diseño elegido fuera otro — abrir una factura para
-    // mirarla no debería cambiar qué plantilla usa tu próxima factura nueva.
-    let formTemplate = '1';
-    let formNotes = '';
-    let formTax = 0;         // Siempre el monto en $ — es lo único que se guarda en la factura (salesTax)
-    let formTaxMode = 'amount';  // 'amount' | 'percent' — solo UI, nunca se persiste
-    let formTaxPct = 0;      // % ingresado cuando formTaxMode==='percent'; formTax se recalcula desde aquí
-    let formDueDate = '';  // Fecha de vencimiento opcional (ISO) — vacía = sin vencimiento
-    let formRecurring = false;  // factura recurrente (atajo manual, no autogenera nada sola)
-    let editingInvoiceId = null;  // null = crear nuevo, non-null = editar
-    let hasUnsavedChanges = false;  // Track if form has unsaved changes
     let searchQuery = '';
     let filteredInvoices = [];
     let historyStatusFilter = 'all';   // 'all' | 'pending' | 'overdue' | 'paid'
     let historyYearFilter = null;      // null = todas, o '2026', '2025', etc.
     let historyClientFilter = null;    // null = todos, o el nombre exacto de un cliente
     let historySortMode = 'number';    // 'number' | 'date' | 'amount-desc' | 'amount-asc'
-
-    // ── Modo selección (compartir/descargar varias facturas) ──
-    let _selectionMode = false;
-    let _selectedIds = new Set();
-
-    function enterSelectionMode(preselectId) {
-      _selectionMode = true;
-      _selectedIds.clear();
-      if (preselectId) _selectedIds.add(preselectId);
-      closeAllDropdowns();
-      closeFilterPanel();
-      const nav = document.getElementById('bottom-nav');
-      if (nav) nav.style.display = 'none';  // la barra de selección ocupa su lugar
-      renderHistory();
-      _updateSelectionBar();
-    }
-
-    function exitSelectionMode() {
-      _selectionMode = false;
-      _selectedIds.clear();
-      const bar = document.getElementById('selection-bar');
-      if (bar) bar.style.display = 'none';
-      const nav = document.getElementById('bottom-nav');
-      if (nav) nav.style.display = '';
-      filterInvoices();   // respeta el filtro activo y ya llama a renderHistory() por dentro
-    }
-
-    function toggleSelectInvoice(id) {
-      if (_selectedIds.has(id)) _selectedIds.delete(id); else _selectedIds.add(id);
-      // Actualiza solo la tarjeta afectada (sin re-render completo) para que sea instantáneo
-      const card = document.querySelector(`.invoice-card[data-card-id="${CSS.escape(id)}"]`);
-      if (card) {
-        const on = _selectedIds.has(id);
-        card.classList.toggle('selected', on);
-        const chk = card.querySelector('.sel-check');
-        if (chk) { chk.classList.toggle('on', on); chk.textContent = on ? '✓' : ''; }
-      }
-      _updateSelectionBar();
-    }
-
-    // Web Share API con archivos: la soportan varios navegadores de escritorio
-    // (Chrome/Edge en Windows, Safari en Mac), no solo teléfonos. Por eso se
-    // detecta por soporte real (feature detection), no por _isMobileDevice().
-    function _canShareFiles() {
-      return !!(navigator.canShare && navigator.share);
-    }
-
-    function _updateSelectionBar() {
-      const bar = document.getElementById('selection-bar');
-      const count = _selectedIds.size;
-      if (!bar) return;
-      bar.style.display = _selectionMode ? 'flex' : 'none';
-      document.getElementById('selection-count').textContent = String(count);
-      const shareBtn = document.getElementById('selection-share-btn');
-      const downloadBtn = document.getElementById('selection-download-btn');
-      if (shareBtn) shareBtn.style.display = _canShareFiles() ? '' : 'none';
-      [shareBtn, downloadBtn].forEach(btn => {
-        if (!btn) return;
-        btn.disabled = count === 0;
-        btn.style.opacity = count === 0 ? '.5' : '';
-      });
-      // Restaura el texto (por si quedó en "Generando…" de un intento anterior)
-      if (shareBtn) shareBtn.textContent = 'Compartir';
-      if (downloadBtn) downloadBtn.textContent = 'Descargar';
-    }
-
-    // Genera el PDF de cada factura seleccionada.
-    async function _buildSelectedPDFs() {
-      await _ensureJsPDF();
-      const ids = [..._selectedIds];
-      let logoDims = null;
-      try { logoDims = await getLogoPDFDims(); } catch (e) {}
-      const files = [];
-      for (const id of ids) {
-        const inv = invoices.find(i => i.id === id);
-        if (!inv) continue;
-        const doc = buildPDFFromInvoice(inv, logoDims);
-        files.push({ blob: doc.output('blob'), name: `Factura-${inv.number}.pdf` });
-      }
-      return files;
-    }
-
-    // Comparte todas las facturas seleccionadas de una vez con el menú nativo
-    // (teléfono, o navegadores de escritorio que soporten Web Share con archivos).
-    async function shareSelected() {
-      if (_selectedIds.size === 0) return;
-      const shareBtn = document.getElementById('selection-share-btn');
-      if (shareBtn) { shareBtn.disabled = true; shareBtn.textContent = 'Generando…'; }
-      const files = await _buildSelectedPDFs();
-      try {
-        const shareFiles = files.map(f => new File([f.blob], f.name, { type: 'application/pdf' }));
-        if (navigator.canShare({ files: shareFiles })) {
-          const invs = [..._selectedIds].map(id => invoices.find(i => i.id === id)).filter(Boolean);
-          const vars = _buildShareVars(invs);
-          const title = _fillTemplate(_getShareSubjectTemplate(), vars);
-          const text = _fillTemplate(_getShareBodyTemplate(), vars);
-          await navigator.share({ files: shareFiles, title, text });
-          exitSelectionMode();
-          return;
-        }
-      } catch (e) {
-        if (e.name === 'AbortError') { _updateSelectionBar(); return; }
-      }
-      // El navegador anunciaba soporte pero falló al compartir: usar la descarga como respaldo
-      _downloadFiles(files);
-      exitSelectionMode();
-    }
-
-    // Descarga cada PDF seleccionado por separado.
-    async function downloadSelected() {
-      if (_selectedIds.size === 0) return;
-      const downloadBtn = document.getElementById('selection-download-btn');
-      if (downloadBtn) { downloadBtn.disabled = true; downloadBtn.textContent = 'Generando…'; }
-      const files = await _buildSelectedPDFs();
-      _downloadFiles(files);
-      exitSelectionMode();
-    }
-
-    // Un solo PDF con todas las facturas seleccionadas, una tras otra (cada una
-    // conserva su propia paginación interna).
-    function buildCombinedPDF(invs, logoDims) {
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF({ unit: 'pt', format: 'letter' });
-      invs.forEach((inv, i) => {
-        if (i > 0) doc.addPage();
-        buildPDFFromInvoice(inv, logoDims, doc);
-      });
-      return doc;
-    }
-
-    async function downloadSelectedCombined() {
-      if (_selectedIds.size === 0) return;
-      await _ensureJsPDF();
-      const ids = [..._selectedIds];
-      let logoDims = null;
-      try { logoDims = await getLogoPDFDims(); } catch (e) {}
-      const invs = ids.map(id => invoices.find(i => i.id === id)).filter(Boolean);
-      if (invs.length === 0) return;
-      const doc = buildCombinedPDF(invs, logoDims);
-      await _deliverPDF(doc, `Facturas-combinadas-${todayISO()}.pdf`, `${invs.length} facturas`);
-      exitSelectionMode();
-    }
-
-    function _downloadFiles(files) {
-      files.forEach((f, i) => {
-        setTimeout(() => {
-          _deliverBlobFile(f.blob, f.name);
-        }, i * 300);  // pequeño escalón: algunos navegadores bloquean descargas/comparticiones simultáneas
-      });
-      showToast(`Descargando ${files.length} factura${files.length !== 1 ? 's' : ''}`, 'success');
-    }
 
     function setSortMode(mode) {
       historySortMode = mode;
@@ -4770,309 +4586,187 @@
       renderHistory();
     }
 
+    // ── Formulario de movimiento ──
+    let editingMovementId = null;   // null = crear, id = editar
+    let formType = 'in', formFundId = '', formAmount = '', formDate = '', formNote = '', formDueDate = '', formLoanId = '';
+    let hasUnsavedChanges = false;
 
     function setUnsavedChanges(value) {
       hasUnsavedChanges = value;
       updateUnsavedIndicator();
     }
-
+    // El botón Guardar se pone naranja mientras hay cambios sin guardar (en Facturas era el de PDF).
     function updateUnsavedIndicator() {
+      const btn = document.getElementById('save-mov-btn');
       const inCreateView = document.getElementById('view-create').style.display !== 'none';
-      // El botón vive fijo en el HTML estático del header de #view-create (nunca se
-      // recrea) — el selector directo siempre lo encuentra, así que no hace falta
-      // el fallback que recorría TODOS los .btn de la página en cada tecla.
-      const pdfBtn = document.querySelector('button[data-action="generate-pdf"]');
-      if (hasUnsavedChanges && inCreateView) {
-        if (pdfBtn) pdfBtn.style.background = '#ff9800';
-      } else {
-        if (pdfBtn) pdfBtn.style.background = '';
+      if (btn) btn.style.background = (hasUnsavedChanges && inCreateView) ? '#ff9800' : '';
+    }
+    function _formChanged() { setUnsavedChanges(true); saveDraft(); }
+    function setFormType(t) { formType = t; _formChanged(); renderCreateForm(); }
+
+    function renderCreateForm() {
+      const el = document.getElementById('movement-form');
+      const title = document.getElementById('create-title');
+      if (title) title.textContent = editingMovementId ? 'Editar movimiento' : 'Nuevo movimiento';
+      if (funds.length === 0) {
+        el.innerHTML = `<div class="empty-state"><p><strong>Primero crea un fondo.</strong><br>Un fondo es una alcancía con nombre (Emergencia, Vacaciones…).</p>
+          <button class="btn btn-primary" onclick="openFundModal(null, this)">+ Nuevo fondo</button></div>`;
+        return;
+      }
+      if (!formFundId || !fundById(formFundId)) formFundId = funds[0].id;
+      const loans = openLoansOf(formFundId);
+      if (formType === 'repay' && !loans.some(l => l.id === formLoanId)) formLoanId = loans[0]?.id || '';
+      const typeBtns = Object.entries(MOV_TYPES).map(([t, label]) =>
+        `<button type="button" class="mov-type-btn ${t}${formType === t ? ' active' : ''}" onclick="setFormType('${t}')">${label}</button>`).join('');
+      const loanLabel = l => `${formatMoney(loanBalance(l).balance)} · ${formatDateDisplay(l.date)}${l.note ? ' · ' + escapeHTML(l.note) : ''}`;
+      el.innerHTML = `
+        <div class="settings-section subview-form" style="padding:16px 18px;">
+          <label>Tipo</label>
+          <div class="mov-type-grid">${typeBtns}</div>
+          <label>Fondo</label>
+          <select id="mf-fund" onchange="formFundId=this.value;formLoanId='';_formChanged();renderCreateForm();">
+            ${funds.map(f => `<option value="${f.id}"${f.id === formFundId ? ' selected' : ''}>${escapeHTML(f.name)}</option>`).join('')}
+          </select>
+          <label>Monto</label>
+          <input id="mf-amount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" value="${escapeHTML(String(formAmount))}" oninput="formAmount=this.value;_formChanged();">
+          <label>Fecha</label>
+          <input id="mf-date" type="date" value="${formDate}" onchange="formDate=this.value;_formChanged();">
+          ${formType === 'loan' ? `
+          <label>Devolver antes del (opcional)</label>
+          <input id="mf-due" type="date" value="${formDueDate}" onchange="formDueDate=this.value;_formChanged();">` : ''}
+          ${formType === 'repay' ? (loans.length === 0
+            ? `<p style="color:var(--text-light);font-size:0.9rem;margin:6px 0 12px;">No debes nada en este fondo.</p>`
+            : `<label>Préstamo</label>
+          <select id="mf-loan" onchange="formLoanId=this.value;_formChanged();">
+            ${loans.map(l => `<option value="${l.id}"${l.id === formLoanId ? ' selected' : ''}>${loanLabel(l)}</option>`).join('')}
+          </select>`) : ''}
+          <label>Nota (opcional)</label>
+          <input id="mf-note" type="text" placeholder="Ej: boletos de avión" value="${escapeHTML(formNote)}" oninput="formNote=this.value;_formChanged();">
+        </div>`;
+    }
+
+    function buildMovementObject() {
+      const dv = validateDate(formDate);
+      if (!dv.valid) throw new Error(dv.error);
+      const amount = round2(formAmount);
+      if (!(amount > 0)) throw new Error('Pon un monto mayor a 0.');
+      if (!fundById(formFundId)) throw new Error('Elige un fondo.');
+      const previous = editingMovementId ? movements.find(m => m.id === editingMovementId) : null;
+      if (previous && previous.type === 'loan' && formType !== 'loan' && movements.some(m => m.type === 'repay' && m.loanId === previous.id)) {
+        throw new Error('Este préstamo ya tiene devoluciones; bórralas antes de cambiarle el tipo.');
+      }
+      if (formType === 'repay') {
+        const loan = movements.find(m => m.id === formLoanId && m.type === 'loan' && m.fundId === formFundId);
+        if (!loan) throw new Error('Elige a qué préstamo devuelves.');
+        // Aviso sin bloquear (como savePayment en Facturas): el saldo cuenta la devolución que
+        // se está editando, así que se le resta para no avisar de más.
+        const own = previous && previous.type === 'repay' && previous.loanId === loan.id ? previous.amount : 0;
+        if (amount > loanBalance(loan).balance + own) showToast('Estás devolviendo más de lo que debes en ese préstamo', 'info', { duration: 4500 });
+      }
+      return {
+        fundId: formFundId,
+        type: formType,
+        amount,
+        date: formDate || todayISO(),
+        note: (formNote || '').trim(),
+        dueDate: formType === 'loan' ? (formDueDate || '') : '',
+        loanId: formType === 'repay' ? formLoanId : ''
+      };
+    }
+
+    function saveCurrentMovement(triggerEl) {
+      try {
+        const m = buildMovementObject();
+        let ok;
+        if (editingMovementId && movements.some(x => x.id === editingMovementId)) {
+          ok = updateMovement(editingMovementId, m);
+          if (ok) showToast('Movimiento actualizado', 'success');
+        } else {
+          editingMovementId = null;
+          ok = addMovement(m);
+          if (ok) showToast('Movimiento guardado', 'success');
+        }
+        if (!ok) { showToast('No se pudo guardar (almacenamiento lleno). Tus cambios siguen en el formulario.', 'error'); return; }
+        closeCreate(triggerEl);
+      } catch (e) {
+        showToast('Error al guardar: ' + e.message, 'error');
       }
     }
 
-    // Guarda el borrador en sessionStorage. Debounced: antes serializaba TODO el
-    // formulario en cada tecla; ahora espera una pausa de 250ms. El timer se cancela
-    // en clearDraft() para que un guardado pendiente no reviva un borrador ya cerrado.
+    // presetFundId: viene de la página de un fondo (Tarea 5) — deja ese fondo elegido.
+    function openCreate(triggerEl, presetFundId) {
+      editingMovementId = null;
+      formType = 'in';
+      formFundId = presetFundId || (typeof historyFundFilter !== 'undefined' && historyFundFilter) || formFundId || '';
+      formAmount = ''; formDate = todayISO(); formNote = ''; formDueDate = ''; formLoanId = '';
+      setUnsavedChanges(false);
+      renderCreateForm();
+      showView('create', triggerEl);
+      saveDraft();
+    }
+    // Atajo "Devolver" desde un préstamo: abre el form ya en Devolver apuntando a ese préstamo,
+    // con el saldo completo precargado (se puede bajar para devolver una parte).
+    function openRepayFor(loanId, triggerEl) {
+      const loan = movements.find(m => m.id === loanId && m.type === 'loan');
+      if (!loan) return;
+      openCreate(triggerEl, loan.fundId);
+      formType = 'repay'; formLoanId = loanId; formAmount = String(loanBalance(loan).balance);
+      renderCreateForm(); saveDraft();
+    }
+    function editMovement(id, triggerEl) {
+      const m = movements.find(x => x.id === id);
+      if (!m) return;
+      editingMovementId = id;
+      formType = m.type; formFundId = m.fundId; formAmount = String(m.amount); formDate = m.date;
+      formNote = m.note || ''; formDueDate = m.dueDate || ''; formLoanId = m.loanId || '';
+      setUnsavedChanges(false);
+      renderCreateForm();
+      showView('create', triggerEl);
+      saveDraft();
+    }
+    function duplicateMovement(id) {
+      const m = movements.find(x => x.id === id);
+      if (!m) return;
+      const copy = { ...m, date: todayISO() };
+      delete copy.id;
+      if (!addMovement(copy)) { showToast('No se pudo duplicar (almacenamiento lleno)', 'error'); return; }
+      _refreshCurrentView();
+      showToast('Movimiento duplicado con fecha de hoy', 'success');
+    }
+
+    // ── Borrador en sessionStorage (sobrevive recargas a mitad de una edición) ──
     let _draftTimer = null;
     function saveDraft() {
       clearTimeout(_draftTimer);
       _draftTimer = setTimeout(_saveDraftNow, 250);
     }
-
-    // Si el usuario sale de la app con un guardado pendiente, se guarda al instante
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden' && _draftTimer) {
-        clearTimeout(_draftTimer);
-        _saveDraftNow();
-      }
+      if (document.visibilityState === 'hidden' && _draftTimer) { clearTimeout(_draftTimer); _saveDraftNow(); }
     });
-
     function _saveDraftNow() {
       _draftTimer = null;
       try {
-        const draft = {
-          formTables,
-          formDate,
-          formTax,
-          formTaxMode,
-          formTaxPct,
-          formTemplate,
-          editingInvoiceId,
-          formNotes,
-          formDueDate,
-          formRecurring,
-          client
-        };
-        sessionStorage.setItem('bank_draft', JSON.stringify(draft));
-      } catch (e) {
-        console.warn('Could not save draft to sessionStorage:', e);
-      }
+        sessionStorage.setItem('bank_draft', JSON.stringify({ editingMovementId, formType, formFundId, formAmount, formDate, formNote, formDueDate, formLoanId }));
+      } catch (e) { console.warn('Could not save draft:', e); }
     }
-
-    // Load draft from sessionStorage if available
     function loadDraft() {
       try {
-        const draft = sessionStorage.getItem('bank_draft');
-        if (draft) {
-          const parsed = JSON.parse(draft);
-          formTables = parsed.formTables || (parsed.formItems ? [{ title: '', items: parsed.formItems }] : [EMPTY_TABLE()]);
-          formDate = parsed.formDate || todayISO();
-          formTax = parsed.formTax || 0;
-          formTaxMode = parsed.formTaxMode || 'amount';
-          formTaxPct = parsed.formTaxPct || 0;
-          formTemplate = parsed.formTemplate || localStorage.getItem('bank_invoiceTemplate') || '1';
-          formNotes = parsed.formNotes || '';
-          formDueDate = parsed.formDueDate || '';
-          formRecurring = parsed.formRecurring || false;
-          editingInvoiceId = parsed.editingInvoiceId || null;
-          // Si el borrador tenía su propio cliente (factura en edición a medio llenar),
-          // restaurarlo — sin esto, recargar a mitad de una edición hacía que el form
-          // reapareciera con el cliente "activo" de la sesión anterior, no el de la
-          // factura que se estaba editando.
-          if (parsed.client && typeof parsed.client === 'object') client = parsed.client;
-          return true;
-        }
-      } catch (e) {
-        console.warn('Could not load draft from sessionStorage:', e);
-      }
-      return false;
+        const d = JSON.parse(sessionStorage.getItem('bank_draft') || 'null');
+        if (!d) return false;
+        editingMovementId = d.editingMovementId || null;
+        formType = MOV_TYPES[d.formType] ? d.formType : 'in';
+        formFundId = d.formFundId || '';
+        formAmount = d.formAmount || '';
+        formDate = d.formDate || todayISO();
+        formNote = d.formNote || '';
+        formDueDate = d.formDueDate || '';
+        formLoanId = d.formLoanId || '';
+        return true;
+      } catch (e) { console.warn('Could not load draft:', e); return false; }
     }
-
     function clearDraft() {
-      clearTimeout(_draftTimer);  // cancela un guardado pendiente (evita revivir el borrador)
-      _draftTimer = null;
-      try {
-        sessionStorage.removeItem('bank_draft');
-      } catch (e) {
-        console.warn('Could not clear draft:', e);
-      }
-    }
-
-    function openCreate(triggerEl) {
-      if (_selectionMode) exitSelectionMode();
-      if (localStorage.getItem('bank_invoiceAskDesign') === 'false') {
-        _doOpenCreate();
-      } else {
-        openTemplatePicker(undefined, triggerEl);
-      }
-    }
-
-    function _doOpenCreate() {
-      searchQuery = '';
-      const searchInput = document.getElementById('search-input');
-      if (searchInput) searchInput.value = '';
-      editingInvoiceId = null;
-      formTables = [EMPTY_TABLE()];
-      formTemplate = localStorage.getItem('bank_invoiceTemplate') || '1';
-      formDate = todayISO();
-      const defaultTaxPct = _getDefaultTaxPct();
-      formTax = 0;
-      formTaxMode = defaultTaxPct > 0 ? 'percent' : 'amount';
-      formTaxPct = defaultTaxPct;
-      formNotes = '';
-      formDueDate = '';
-      formRecurring = false;
-      setUnsavedChanges(false);
-      renderCreateForm();
-      showView('create');
-      saveDraft();
-      updateTemplateIndicator();
-    }
-
-    let _selectedTemplate = '1';
-    let _pickMode = 'new';
-
-    const _tplNames = { '1':'Minimalista', '2':'Moderno oscuro', '3':'Profesional', '4':'Glass', '5':'Clásico' };
-
-    function openTemplatePicker(mode, triggerEl) {
-      _pickMode = mode || 'new';
-      // 'change' (botón dentro del formulario abierto): resalta el diseño de ESTA
-      // factura. 'new' (antes de crear): resalta tu default guardado — formTemplate
-      // todavía no aplica a una factura nueva que no existe.
-      _selectedTemplate = _pickMode === 'change' ? formTemplate : (localStorage.getItem('bank_invoiceTemplate') || '1');
-      document.querySelectorAll('.tpl-card').forEach(el => el.classList.remove('tpl-selected'));
-      const selCard = document.getElementById('tpl-card-' + _selectedTemplate);
-      if (selCard) selCard.classList.add('tpl-selected');
-      const overlay = document.getElementById('modal-template-pick');
-      overlay.classList.add('open');
-      document.getElementById('bottom-nav').style.display = 'none';
-      _growModalFromRect(overlay.querySelector('.modal'), triggerEl);
-    }
-
-    function closeTemplatePicker() {
-      const overlay = document.getElementById('modal-template-pick');
-      _shrinkModalToRect(overlay.querySelector('.modal'), () => {
-        overlay.classList.remove('open');
-        // Si el selector se abrió DESDE el formulario (botón), la barra inferior debe
-        // seguir oculta al cerrarlo — restaurarla la dejaba flotando sobre la factura.
-        const inCreate = document.getElementById('view-create').style.display === 'block';
-        if (!inCreate) document.getElementById('bottom-nav').style.display = '';
-      });
-    }
-
-    function selectTemplateCard(n) {
-      _selectedTemplate = String(n);
-      document.querySelectorAll('.tpl-card').forEach(el => el.classList.remove('tpl-selected'));
-      const card = document.getElementById('tpl-card-' + n);
-      if (card) card.classList.add('tpl-selected');
-      // Elegir del selector SIEMPRE es una decisión explícita — a diferencia de abrir
-      // una factura vieja para editarla, esto sí actualiza tu default para la próxima
-      // factura nueva. formTemplate (el formulario actual) se actualiza aparte.
-      localStorage.setItem('bank_invoiceTemplate', _selectedTemplate);
-      formTemplate = _selectedTemplate;
-      closeTemplatePicker();
-      if (_pickMode === 'change') {
-        updateTemplateIndicator();
-        renderCreateForm();
-      } else {
-        _doOpenCreate();
-      }
-    }
-
-    function updateTemplateIndicator() {
-      const tpl = formTemplate;
-      const el = document.getElementById('tpl-indicator-name');
-      if (el) el.textContent = _tplNames[tpl] || 'Minimalista';
-    }
-
-    function toggleInvoiceDesignAsk() {
-      const on = localStorage.getItem('bank_invoiceAskDesign') !== 'false';
-      localStorage.setItem('bank_invoiceAskDesign', on ? 'false' : 'true');
-      updateDesignAskToggle();
-    }
-
-    function updateDesignAskToggle() {
-      const on = localStorage.getItem('bank_invoiceAskDesign') !== 'false';
-      const sw = document.getElementById('design-ask-sw');
-      if (sw) sw.className = 'sw-track' + (on ? ' on' : '');
-    }
-
-    // ── Impuesto por defecto (se precarga como % al abrir "Nueva Factura") ──
-    function _getDefaultTaxPct() {
-      try { return Math.max(0, parseFloat(localStorage.getItem('bank_default_tax_pct')) || 0); } catch { return 0; }
-    }
-    function saveDefaultTaxPct(v) {
-      const pct = Math.max(0, parseFloat(v) || 0);
-      try { localStorage.setItem('bank_default_tax_pct', String(pct)); } catch {}
-      _updateDefaultTaxInput();
-      showToast('Impuesto por defecto guardado', 'success');
-    }
-    function _updateDefaultTaxInput() {
-      const input = document.getElementById('default-tax-input');
-      if (input) input.value = _getDefaultTaxPct() || '';
-    }
-
-    // Reemplaza {marcador} por su valor en una plantilla — compartido por el mensaje
-    // de recordatorio y el de compartir.
-    function _fillTemplate(template, vars) {
-      let out = template;
-      for (const k in vars) out = out.replaceAll('{' + k + '}', vars[k]);
-      return out;
-    }
-
-    // ── Mensaje de "Enviar recordatorio" (editable en Ajustes) ──
-    const DEFAULT_REMINDER_TEMPLATE = 'Hola {cliente}, te recuerdo la factura #{factura} por {saldo}{vencimiento}. ¿Me confirmas cuándo se podría realizar el pago? Gracias.';
-    function _getReminderTemplate() {
-      try { return localStorage.getItem('bank_reminder_template') || DEFAULT_REMINDER_TEMPLATE; } catch { return DEFAULT_REMINDER_TEMPLATE; }
-    }
-    function saveReminderTemplate(text) {
-      const clean = (text || '').trim() || DEFAULT_REMINDER_TEMPLATE;
-      try { localStorage.setItem('bank_reminder_template', clean); } catch {}
-    }
-    function openRecordatorioPage() {
-      document.getElementById('reminder-template-input').value = _getReminderTemplate();
-      _openSettingsSubView('recordatorio-page');
-    }
-    function closeRecordatorioPage() { _closeSettingsSubView(); }
-    function resetReminderTemplate() {
-      document.getElementById('reminder-template-input').value = DEFAULT_REMINDER_TEMPLATE;
-    }
-    function saveReminderTemplateFromSettings() {
-      saveReminderTemplate(document.getElementById('reminder-template-input').value);
-      showToast('Mensaje guardado', 'success');
-      closeRecordatorioPage();
-    }
-
-    // ── Asunto/descripción al "Compartir" facturas (editable en Ajustes) — van como
-    // title/text del selector nativo, NUNCA dentro del PDF; por correo, el sistema los
-    // muestra como asunto y cuerpo del email solos. ──
-    const DEFAULT_SHARE_SUBJECT = '{cantidad} factura(s)';
-    const DEFAULT_SHARE_BODY = 'Hola, te comparto {cantidad} factura(s) por un total de {total}. Cualquier duda me avisas. Gracias.';
-    function _getShareSubjectTemplate() {
-      try { return localStorage.getItem('bank_share_subject') || DEFAULT_SHARE_SUBJECT; } catch { return DEFAULT_SHARE_SUBJECT; }
-    }
-    function _getShareBodyTemplate() {
-      try { return localStorage.getItem('bank_share_body') || DEFAULT_SHARE_BODY; } catch { return DEFAULT_SHARE_BODY; }
-    }
-    function saveCompartirMsg(subject, body) {
-      try {
-        localStorage.setItem('bank_share_subject', (subject || '').trim() || DEFAULT_SHARE_SUBJECT);
-        localStorage.setItem('bank_share_body', (body || '').trim() || DEFAULT_SHARE_BODY);
-      } catch {}
-    }
-    function openCompartirMsgPage() {
-      document.getElementById('share-subject-input').value = _getShareSubjectTemplate();
-      document.getElementById('share-body-input').value = _getShareBodyTemplate();
-      _openSettingsSubView('compartir-msg-page');
-    }
-    function closeCompartirMsgPage() { _closeSettingsSubView(); }
-    function resetCompartirMsg() {
-      document.getElementById('share-subject-input').value = DEFAULT_SHARE_SUBJECT;
-      document.getElementById('share-body-input').value = DEFAULT_SHARE_BODY;
-    }
-    function saveCompartirMsgFromSettings() {
-      saveCompartirMsg(document.getElementById('share-subject-input').value, document.getElementById('share-body-input').value);
-      showToast('Mensaje guardado', 'success');
-      closeCompartirMsgPage();
-    }
-    // Marcadores disponibles para el asunto/descripción al compartir varias facturas a la vez.
-    function _buildShareVars(invs) {
-      const total = invs.reduce((s, i) => s + (Number(i.total) || 0), 0);
-      const clientes = [...new Set(invs.map(i => (i.client?.name || '').trim()).filter(Boolean))].join(', ');
-      return { cantidad: String(invs.length), total: formatMoney(total), clientes };
-    }
-
-    function editInvoice(id, triggerEl) {
-      const inv = invoices.find(i => i.id === id);
-      if (!inv) return;
-
-      editingInvoiceId = id;
-      formTables = inv.tables
-        ? inv.tables.map(t => ({ title: t.title || '', items: _mapItemsWithManualDate(t.items) }))
-        : [{ title: '', items: _mapItemsWithManualDate(inv.items) }];
-      formDate = inv.date;
-      formTax = inv.salesTax;
-      formTaxMode = 'amount';
-      formTaxPct = 0;
-      formNotes = inv.notes || '';
-      formDueDate = inv.dueDate || '';
-      formRecurring = inv.recurring || false;
-      client = { ...inv.client };
-      // Solo el diseño DE ESTA factura — no toca tu default guardado (ver formTemplate).
-      formTemplate = inv.template || '5';
-      setUnsavedChanges(false);
-      renderCreateForm();
-      showView('create', triggerEl);
-      saveDraft();
+      clearTimeout(_draftTimer); _draftTimer = null;
+      try { sessionStorage.removeItem('bank_draft'); } catch (e) {}
     }
 
     // triggerEl (opcional): el boton que se toco para cerrar (Volver / Guardar). Si viene,
@@ -5124,8 +4818,10 @@
         // Destino: la tarjeta de esta factura. Recien aca se puede medir — con el historial
         // oculto daba 0x0. Si no esta (factura nueva todavia sin tarjeta, o filtrada) o si
         // quedo fuera de la pantalla, se usa el boton que se toco.
-        const card = editingInvoiceId
-          ? document.querySelector(`.invoice-card[data-card-id="${CSS.escape(editingInvoiceId)}"]`)
+        // editingInvoiceId → editingMovementId (Tarea 2): mismo rol (id de lo que se
+        // está editando), pero closeCreate en sí se deja igual — Tarea 5 la reescribe.
+        const card = editingMovementId
+          ? document.querySelector(`.invoice-card[data-card-id="${CSS.escape(editingMovementId)}"]`)
           : null;
         let target = triggerEl;
         if (card) {
@@ -5147,15 +4843,11 @@
     }
 
     function showDefaultView() {
-      // Si había un borrador de factura sin guardar (p.ej. se recargó la página a mitad
-      // de una edición), reabrir el formulario tal como estaba en vez de mandar al historial.
       const hasDraft = loadDraft();
-      const hasContent = hasDraft && (editingInvoiceId || allFormItems().some(it => (it.description || '').trim() !== ''));
-      if (hasContent) {
+      if (hasDraft && (editingMovementId || Number(formAmount) > 0 || formNote)) {
         setUnsavedChanges(true);
         renderCreateForm();
         showView('create');
-        updateTemplateIndicator();
         return;
       }
       showView('history');
@@ -5228,8 +4920,8 @@
       if (_prevTab in _tabScrollY && !_returningFromCreate) _tabScrollY[_prevTab] = _scrollLocked ? _scrollLockY : window.scrollY;
       if (tab in _TAB_ORDER) _lastActiveTab = tab;
 
-      // Al salir del historial, cerrar el modo selección (su barra es fija en pantalla)
-      if (tab !== 'history' && _selectionMode) exitSelectionMode();
+      // (El modo selección de facturas se borró en la Tarea 2 junto con el resto del
+      // formulario viejo — no hay nada que cerrar acá hasta que Tarea 3/4 lo rehagan.)
 
       // Mostrar barra (create la oculta; cualquier otro tab la restaura)
       document.getElementById('bottom-nav').style.display = '';
@@ -5275,10 +4967,11 @@
         if (emailEl) emailEl.textContent = email || '—';
         const avatarEl = document.getElementById('account-avatar');
         if (avatarEl) avatarEl.textContent = email ? email[0].toUpperCase() : '?';
-        updateDesignAskToggle();
+        // (updateDesignAskToggle()/_updateDefaultTaxInput() ya no existen — eran de los
+        // ajustes de factura que se borraron en la Tarea 2; sus filas en el HTML de
+        // Ajustes se limpian recién en la Tarea 4.)
         applyLiteMode();
         updateNewsDot();
-        _updateDefaultTaxInput();
       }
 
       if (tab in _TAB_ORDER && _prevTab in _TAB_ORDER && tab !== _prevTab) {
@@ -6542,7 +6235,11 @@
       };
     }
 
-    function renderCreateForm() {
+    // ponytail: renombrada de renderCreateForm — colisionaba con la nueva función de
+    // Tarea 2 (misma pestaña, JS de función usa el último `function` declarado del mismo
+    // nombre) y tapaba el formulario de movimiento nuevo por completo. Código muerto de
+    // facturas, se borra entero en la Tarea 4 junto con el resto.
+    function _deadRenderCreateForm_invoice() {
       const el = document.getElementById('invoice-form');
 
       const tablesHTML = formTables.map((table, ti) => {
@@ -9838,7 +9535,8 @@
     // ── Long-press en una tarjeta → entra al modo selección con esa factura marcada ──
     let _lpTimer = null, _lpStartX = 0, _lpStartY = 0;
     document.addEventListener('pointerdown', (e) => {
-      if (_selectionMode) return;  // ya está en selección; el clic normal la maneja
+      // Modo selección de facturas borrado en la Tarea 2 (ver más abajo, enterSelectionMode
+      // ya no existe) — este listener queda inerte hasta que Tarea 3/4 lo rehagan.
       if (e.pointerType === 'mouse') return;  // long-press es gesto táctil; con mouse usa el menú ⋮
       const card = e.target.closest('.invoice-card[data-card-id]');
       if (!card) return;
@@ -10240,7 +9938,9 @@
     // Cada modal tiene su propia función de cierre (restaura bottom-nav, limpia blob URLs,
     // etc.) — usar solo classList.remove('open') se saltaba esa limpieza (ver MODAL_CLOSE_FNS).
     const MODAL_CLOSE_FNS = {
-      'modal-template-pick': closeTemplatePicker,
+      // 'modal-template-pick' (selector de diseño) ya no tiene entrada — su
+      // openTemplatePicker/closeTemplatePicker se borraron en la Tarea 2 (el nuevo
+      // formulario de movimiento no elige diseño de PDF); ver pitfall #6 del CLAUDE.md.
       'modal-invoice-preview': closeInvoicePreview,
       'modal-pdf-viewer': closePdfViewer,
       'modal-client': closeClientModal,
@@ -10273,11 +9973,11 @@
         }
       }
 
-      // Ctrl+S / Cmd+S saves current invoice (only in create view)
+      // Ctrl+S / Cmd+S guarda el movimiento actual (solo con el formulario abierto)
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         if (document.getElementById('view-create').style.display === 'block') {
           e.preventDefault();
-          saveCurrentInvoice();
+          saveCurrentMovement();
         }
       }
     });
