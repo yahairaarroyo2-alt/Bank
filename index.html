@@ -1883,33 +1883,6 @@
             </div>
             <span class="settings-row-chevron">›</span>
           </button>
-          <div class="settings-row" style="cursor:default;">
-            <div class="settings-row-icon">%</div>
-            <div class="settings-row-text">
-              <div class="settings-row-title">Impuesto por defecto</div>
-              <div class="settings-row-sub">Se precarga al crear una factura nueva</div>
-            </div>
-            <input id="default-tax-input" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0"
-              onchange="saveDefaultTaxPct(this.value)"
-              style="width:56px;text-align:right;border-radius:8px;padding:6px 8px;font-family:inherit;font-size:0.9rem;flex-shrink:0;">
-            <span style="color:var(--text-light);font-size:0.9rem;">%</span>
-          </div>
-          <button class="settings-row" onclick="openRecordatorioPage()">
-            <div class="settings-row-icon">💬</div>
-            <div class="settings-row-text">
-              <div class="settings-row-title">Mensaje de recordatorio</div>
-              <div class="settings-row-sub">Personaliza el texto de "Enviar recordatorio"</div>
-            </div>
-            <span class="settings-row-chevron">›</span>
-          </button>
-          <button class="settings-row" onclick="openCompartirMsgPage()">
-            <div class="settings-row-icon">💬</div>
-            <div class="settings-row-text">
-              <div class="settings-row-title">Mensaje al compartir</div>
-              <div class="settings-row-sub">Asunto y descripción al compartir facturas</div>
-            </div>
-            <span class="settings-row-chevron">›</span>
-          </button>
         </div>
 
         <!-- DATOS -->
@@ -1958,14 +1931,6 @@
               <div class="settings-row-sub">Cambiar apariencia de la app</div>
             </div>
             <span class="settings-row-chevron">›</span>
-          </button>
-          <button class="settings-row" onclick="toggleInvoiceDesignAsk()">
-            <div class="settings-row-icon">🎨</div>
-            <div class="settings-row-text">
-              <div class="settings-row-title">Pedir diseño al crear</div>
-              <div class="settings-row-sub">Elegir plantilla cada vez que creas una factura</div>
-            </div>
-            <span class="sw-track on" id="design-ask-sw"></span>
           </button>
           <button class="settings-row" onclick="toggleLiteMode()">
             <div class="settings-row-icon">🔋</div>
@@ -4417,6 +4382,14 @@
     let historyYearFilter = null;      // null = todas, o '2026', '2025', etc.
     let historyClientFilter = null;    // null = todos, o el nombre exacto de un cliente
     let historySortMode = 'number';    // 'number' | 'date' | 'amount-desc' | 'amount-asc'
+
+    // Modo selección de facturas: la funcionalidad se borró en la Tarea 2, pero
+    // _invoiceCardHTML() todavía LEE estas dos variables en cada tarjeta — quedan como
+    // inertes (siempre "no seleccionado") para que esa lectura no truene. Tarea 3
+    // reescribe renderHistory() por completo con el modelo de movimientos y esto deja
+    // de hacer falta.
+    let _selectionMode = false;
+    let _selectedIds = new Set();
 
     function setSortMode(mode) {
       historySortMode = mode;
@@ -8693,21 +8666,11 @@
     // mientras lo nuevo crece desde su botón (así se ve de dónde sale) y recién se cierra
     // cuando ya la tapó del todo. La foto del botón se toma igual antes, porque durante
     // la animación el modal ya está escalado y mediría mal.
+    // editInvoice() se borró en la Tarea 2 (el formulario de captura ahora es el de
+    // movimiento, no tiene a dónde llevar una factura vieja) — parche mínimo hasta que
+    // la Tarea 3/4 borren esta ruta de raíz.
     function editPreviewInvoice(btn) {
-      const id = _previewInvoiceId;
-      const src = _snapTrigger(btn);
-      editInvoice(id, src);
-      const create = document.getElementById('view-create');
-      if (!src) { _closeInvoicePreviewInstant(); return; }
-      create.style.zIndex = '101';  // por encima del overlay de la vista previa (100)
-      // Este listener se registra después del de showView, así que corre después de que
-      // ese devuelve la vista al flujo normal — sin un frame intermedio donde la vista
-      // pierda el z-index y la tarjeta vieja vuelva a asomar por encima. Con "reducir
-      // movimiento" la animación no corre (ver @media arriba) y el evento nunca llegaría.
-      if (_prefersReducedMotion()) _closeInvoicePreviewInstant();
-      else create.addEventListener('animationend', e => {
-        if (e.target === create) _closeInvoicePreviewInstant();
-      }, { once: true });
+      showToast('Edición de facturas ya no disponible', 'info');
     }
 
     async function downloadPreviewPDF(btn) {
@@ -9440,11 +9403,9 @@
         // genie cubre la tarjeta entera, con su propio radio redondeado.
         openInvoicePreview(id, btn.closest('.invoice-card') || btn);
       } else if (action === 'edit') {
-        // Abre DESDE la tarjeta de la factura (no desde el item del menu), para que sea
-        // el mismo punto al que despues vuelve al cerrar. Se mide aca, con el menu todavia
-        // abierto y el historial visible, asi que la tarjeta tiene rect real.
-        const card = document.querySelector(`.invoice-card[data-card-id="${CSS.escape(id)}"]`);
-        editInvoice(id, card || btn);
+        // editInvoice() se borró en la Tarea 2 — parche mínimo hasta que la Tarea 3/4
+        // borren esta ruta de raíz (ver editPreviewInvoice más arriba).
+        showToast('Edición de facturas ya no disponible', 'info');
         closeAllDropdowns();
       } else if (action === 'view-pdf') {
         closeAllDropdowns();
@@ -9532,28 +9493,8 @@
       });
     }
 
-    // ── Long-press en una tarjeta → entra al modo selección con esa factura marcada ──
-    let _lpTimer = null, _lpStartX = 0, _lpStartY = 0;
-    document.addEventListener('pointerdown', (e) => {
-      // Modo selección de facturas borrado en la Tarea 2 (ver más abajo, enterSelectionMode
-      // ya no existe) — este listener queda inerte hasta que Tarea 3/4 lo rehagan.
-      if (e.pointerType === 'mouse') return;  // long-press es gesto táctil; con mouse usa el menú ⋮
-      const card = e.target.closest('.invoice-card[data-card-id]');
-      if (!card) return;
-      if (e.target.closest('.invoice-card-actions')) return;  // no sobre los botones de acción
-      _lpStartX = e.clientX; _lpStartY = e.clientY;
-      _lpTimer = setTimeout(() => {
-        _lpTimer = null;
-        enterSelectionMode(card.dataset.cardId);
-      }, 500);
-    });
-    document.addEventListener('pointermove', (e) => {
-      if (_lpTimer && (Math.abs(e.clientX - _lpStartX) > 10 || Math.abs(e.clientY - _lpStartY) > 10)) {
-        clearTimeout(_lpTimer); _lpTimer = null;  // se movió (scroll): cancelar
-      }
-    });
-    document.addEventListener('pointerup', () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } });
-    document.addEventListener('pointercancel', () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } });
+    // (Long-press → modo selección se borró entero en la Tarea 2: apuntaba a
+    // enterSelectionMode(), que ya no existe. Tarea 3 no lo necesita.)
 
     // ── Cross-Tab Synchronization ──
     window.addEventListener('storage', (e) => {
