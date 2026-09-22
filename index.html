@@ -8972,7 +8972,6 @@
         `<button class="dropdown-item" data-action="edit" data-id="${id}">Editar</button>` +
         `<button class="dropdown-item" data-action="duplicate" data-id="${id}">Duplicar</button>` +
         (isMobile ? `<button class="dropdown-item" data-action="view-pdf" data-id="${id}">Ver PDF</button>` : '') +
-        `<button class="dropdown-item" title="Compartir o Descargar" onclick="closeAllDropdowns();enterSelectionMode('${id}')">Seleccionar</button>` +
         (inv && !inv.paid
           ? `<button class="dropdown-item" onclick="openPaymentModal('${id}', document.getElementById('global-card-menu')._btn);closeAllDropdowns();">Registrar abono</button>`
           : '') +
