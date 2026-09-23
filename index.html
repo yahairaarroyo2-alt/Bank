@@ -4615,6 +4615,8 @@
       const header = () => {
         y = _pdfSection(doc, 'Movimientos', y);
         doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(110);
+        // 100pt, no 70: con 70 "Fecha" y "Movimiento" se pisaban — fechas largas como
+        // "September 10, 2026" miden ~90pt en Helvetica 10pt.
         doc.text('Fecha', margin, y); doc.text('Movimiento', margin + 100, y);
         doc.text('Entra', W - margin - 150, y, { align: 'right' });
         doc.text('Sale', W - margin - 80, y, { align: 'right' });
@@ -4629,7 +4631,10 @@
         if (y > 740) { doc.addPage(); y = 55; header(); }
         running += MOV_SIGN[m.type] * m.amount;
         doc.text(formatDateDisplay(m.date), margin, y);
-        doc.text(doc.splitTextToSize(MOV_TYPES[m.type] + (m.note ? ' — ' + m.note : ''), 200)[0], margin + 100, y);
+        // Se corta a una sola línea (el PDF no pagina horizontalmente) — "…" avisa que
+        // hay más texto; la nota completa sigue intacta en la app/Firestore.
+        const _movLines = doc.splitTextToSize(MOV_TYPES[m.type] + (m.note ? ' — ' + m.note : ''), 200);
+        doc.text(_movLines[0] + (_movLines.length > 1 ? '…' : ''), margin + 100, y);
         doc.text(formatMoneyForPDF(m.amount), MOV_SIGN[m.type] > 0 ? W - margin - 150 : W - margin - 80, y, { align: 'right' });
         doc.text(formatMoneyForPDF(round2(running)), W - margin, y, { align: 'right' });
         y += 14;
