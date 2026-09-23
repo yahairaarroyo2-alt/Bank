@@ -46,6 +46,7 @@ Bank/
 | `bank_profile` | `{ name }` — tu nombre, para el encabezado del PDF |
 | `bank_home_tab` | `'funds'` \| `'history'` — pestaña que se muestra al abrir la app (Ajustes → Apariencia → "Pantalla de inicio"; internamente "Movimientos" se guarda como `'history'`, resabio del nombre interno de la vista) |
 | `bank_theme_mode` | `'light'` \| `'dark'` \| `'auto-system'` \| `'auto-time'` |
+| `bank_theme` | Fallback heredado de una migración anterior (se lee, nunca se escribe — muerto en la práctica) |
 | `bank_lite_mode` | `'true'`/`'false'` — "Menos efectos" (Ajustes → Apariencia). Ausente = decide sola (`_liteModeDefault()`: `prefers-reduced-transparency` o `navigator.deviceMemory <= 4`) |
 | `bank_cl_seen` | Fecha ISO de la última mejora vista en el cartel de Novedades |
 | `bank_cl_first_seen` | `{fecha: timestamp}` — cuándo vio ESTE dispositivo cada mejora por primera vez (controla los 3 días que dura la etiqueta NEW) |
@@ -124,7 +125,7 @@ Del spec (`docs/superpowers/specs/2026-09-21-bank-design.md`), verificado contra
 ### Sincronización con Firestore
 - `_syncMovement(m)` / `_syncFund(f)` / `_deleteMovementCloud(id)` / `_deleteFundCloud(id)` — fuego y olvida (no awaited); avisan con un toast si la escritura falla de verdad (no simplemente por estar offline: con persistencia offline habilitada, sin conexión la promesa queda pendiente, no cae en el catch)
 - `_syncSettings()` — sube `{profile, homeTab}` a `settings/main`
-- `_commitOpsInChunks(ops)` — helper compartido: corre una lista de `(batch) => void` en tandas de 450 (límite real de Firestore: 500 escrituras/batch). Lo usa `_replaceFirestoreAll`
+- `_commitOpsInChunks(ops)` — helper compartido: corre una lista de `(batch) => void` en tandas de 450 (límite real de Firestore: 500 escrituras/batch). Lo usan `_replaceFirestoreAll` y `_mergeCollection` (dos veces, una por colección, en cada `_loadFromFirestore()`)
 - `_replaceFirestoreAll()` — **borra todo en Firestore (fondos y movimientos) y re-sube el array local** — usar solo tras import/restore de backup
 - `_mergeCollection(ref, local, normalize)` — merge de UNA colección local↔nube (nube gana en mismo id; lo que solo existe local se sube); la usa `_loadFromFirestore()` para fondos y movimientos por separado
 - `_loadFromFirestore()` — descarga completa + merge; solo se llama al iniciar sesión o tras recuperar la conexión
