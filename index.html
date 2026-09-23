@@ -1705,6 +1705,9 @@
     .mov-type-btn.active { outline:2px solid var(--blue); }
     .mov-type-btn.in.active, .mov-type-btn.repay.active { outline-color:#2e7d32; }
     .mov-type-btn.loan.active, .mov-type-btn.out.active { outline-color:#c0540a; }
+
+    .goal-bar { height:7px; border-radius:4px; background:rgba(0,0,0,.08); margin-top:8px; overflow:hidden; }
+    .goal-bar span { display:block; height:100%; border-radius:4px; }
   </style>
 </head>
 <body>
@@ -1760,8 +1763,37 @@
   <!-- App Header -->
   <div style="height:env(safe-area-inset-top,0px);"></div>
 
+  <!-- Funds View -->
+  <div id="view-funds" style="display:none;">
+    <div class="container">
+      <div id="funds-list-page">
+        <div class="history-actions" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-primary" onclick="openCreate(this)">+ Nuevo movimiento</button>
+          <button class="btn btn-ghost" onclick="openFundModal(null, this)">+ Nuevo fondo</button>
+        </div>
+        <div id="funds-banner" class="history-banner" style="display:none;"></div>
+        <div id="funds-list"></div>
+      </div>
+      <!-- Página de UN fondo — se abre con genie desde su tarjeta (ver openFundPage) -->
+      <div id="fund-page" style="display:none;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+          <button class="btn btn-ghost btn-sm" onclick="closeFundPage()" aria-label="Volver" style="font-size:1.2rem;padding:6px 12px;">←</button>
+          <div id="fund-page-title" style="flex:1;font-size:1.2rem;font-weight:800;color:var(--text);"></div>
+          <div class="overflow-wrap">
+            <button class="btn btn-ghost btn-sm overflow-trigger" id="fund-page-menu-btn" data-kind="fund" data-id="" aria-label="Más acciones" aria-haspopup="true" style="padding:6px 10px;font-size:1.1rem;line-height:1;">⋮</button>
+          </div>
+        </div>
+        <div id="fund-page-stats"></div>
+        <div class="history-actions" style="margin-bottom:12px;">
+          <button class="btn btn-primary" onclick="openCreate(this, _openFundId)">+ Nuevo movimiento</button>
+        </div>
+        <div id="fund-movement-list"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- History View -->
-  <div id="view-history">
+  <div id="view-history" style="display:none;">
     <div class="container">
       <div class="history-actions" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
         <button class="btn btn-primary" onclick="openCreate(this)">+ Nuevo movimiento</button>
@@ -2089,6 +2121,23 @@
     </div>
   </div>
 
+  <!-- Nuevo / editar fondo -->
+  <div class="modal-overlay" id="modal-fund" onclick="if(event.target===this)closeFundModal()">
+    <div class="modal">
+      <h2 id="fund-modal-title">Nuevo fondo</h2>
+      <label>Nombre</label>
+      <input id="fund-name" type="text" placeholder="Ej: Vacaciones" onkeydown="if(event.key==='Enter')saveFundModal()">
+      <label>Meta (opcional)</label>
+      <input id="fund-goal" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00">
+      <label>Color</label>
+      <input id="fund-color" type="color" value="#5b8fa8" style="width:56px;height:36px;padding:2px;border-radius:8px;">
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeFundModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveFundModal()">Guardar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal de confirmación genérico (reemplaza confirm() nativo, inconsistente con el
        resto de la app y poco fiable en PWA instalada / webviews embebidos) -->
   <div class="modal-overlay" id="modal-confirm" onclick="if(event.target===this)closeConfirmModal()">
@@ -2164,11 +2213,14 @@
   <!-- Bottom Nav -->
   <nav id="bottom-nav">
     <span id="bnLens" class="bn-lens" aria-hidden="true"></span>
-    <button class="bn-item active" data-nav="history" onclick="switchTab('history')">
-      <span class="bn-icon">📋</span><span class="bn-lbl">Facturación</span>
+    <button class="bn-item" data-nav="funds" onclick="switchTab('funds')">
+      <span class="bn-icon">🏦</span><span class="bn-lbl">Fondos</span>
+    </button>
+    <button class="bn-item" data-nav="history" onclick="switchTab('history')">
+      <span class="bn-icon">📋</span><span class="bn-lbl">Movimientos</span>
     </button>
     <button class="bn-item" data-nav="dashboard" onclick="switchTab('dashboard')">
-      <span class="bn-icon">📊</span><span class="bn-lbl">Dashboard</span>
+      <span class="bn-icon">📊</span><span class="bn-lbl">Resumen</span>
     </button>
     <div class="settings-wrap" id="settings-wrap">
       <button class="bn-item" data-nav="settings" id="settings-btn" onclick="switchTab('settings')">
@@ -3196,84 +3248,8 @@
     function _updateHomeTabUI() { const s = document.getElementById('home-tab-select'); if (s) s.value = _getHomeTab(); }
 
     // ── Views ──
-    // ¿El formulario de crear/editar está abierto? Se entra vía showView('create', ...),
-    // no vía switchTab() — así que _lastActiveTab se queda en 'history' todo ese tiempo
-    // (ver el guard en switchTab más abajo, que usa esta bandera para no confundir el
-    // scroll del formulario con el del historial al volver).
-    let _createViewOpen = false;
-
-    function showView(name, triggerEl) {
-      const history = document.getElementById('view-history');
-      const create = document.getElementById('view-create');
-
-      if (name === 'history') {
-        _createViewOpen = false;
-        // Slide out create (right), slide in history (left)
-        create.classList.add('slide-out-right');
-        create.classList.remove('slide-in-right', 'grow-in-point');
-        history.classList.remove('slide-out-left');
-        history.classList.add('slide-in-left');
-        history.style.display = 'block';
-        create.style.display = 'none';
-      } else if (name === 'create') {
-        // Capturar el scroll REAL del historial ahora, mientras todavía estamos en él —
-        // switchTab() no corre en esta transición (showView es aparte), así que sin esto
-        // _tabScrollY.history se quedaba con el valor de la última vez que SÍ pasó por
-        // switchTab, no con la posición actual si venías de scrollear más.
-        if (!_createViewOpen) _tabScrollY.history = _scrollLocked ? _scrollLockY : window.scrollY;
-        _createViewOpen = true;
-        // El origen se mide ACA, antes de esconder el historial: si triggerEl es la tarjeta
-        // de la factura (vive dentro de #view-history), despues de ocultarlo mediria 0x0.
-        const srcData = _snapTrigger(triggerEl);
-        create.style.display = 'block';
-        document.getElementById('bottom-nav').style.display = 'none';
-        if (srcData) {
-          // Genie: crece desde la tarjeta CON su fondo y con el historial todavia visible
-          // detras, para que no aparezca todo de golpe. Igual que en closeCreate, la vista
-          // se saca del flujo (position:fixed sobre el hueco del historial) porque ambos son
-          // bloques normales y si no uno empujaria al otro.
-          create.classList.remove('slide-in-right', 'slide-out-right');
-          // Se mide la PROPIA vista (ya en display:block, todavia en flujo) y no el
-          // historial: si el historial esta oculto — p.ej. se llega aca desde la vista
-          // previa abierta con el historial ya fuera de pantalla — su rect es 0x0 y la
-          // vista quedaria con ancho 0.
-          const hr = create.getBoundingClientRect();
-          create.style.transition = 'none';
-          create.style.position = 'fixed';
-          create.style.top = '0px';
-          create.style.left = hr.left + 'px';
-          create.style.width = hr.width + 'px';
-          create.style.zIndex = '50';
-          create.style.backgroundImage = getComputedStyle(document.body).backgroundImage;
-          create.style.overflow = 'hidden';
-          void create.offsetWidth;
-          _growViewFromRect(create, srcData);
-          // Al terminar de crecer: volver al flujo normal, soltar el fondo prestado y
-          // recien ahi esconder el historial (ya tapado del todo por la vista).
-          const onGrown = () => {
-            create.style.position = '';
-            create.style.top = '';
-            create.style.left = '';
-            create.style.width = '';
-            create.style.zIndex = '';
-            create.style.backgroundImage = '';
-            create.style.overflow = '';
-            history.classList.add('slide-out-left');
-            history.classList.remove('slide-in-left');
-            history.style.display = 'none';
-            window.scrollTo(0, 0);
-          };
-          if (_prefersReducedMotion()) onGrown();
-          else create.addEventListener('animationend', e => { if (e.target === create) onGrown(); }, { once: true });
-        } else {
-          history.classList.add('slide-out-left');
-          history.classList.remove('slide-in-left');
-          history.style.display = 'none';
-          create.classList.remove('slide-out-right');
-          create.classList.add('slide-in-right');
-        }
-      }
-    }
+    // showView/closeCreate/switchTab/showDefaultView y las constantes _TAB_ORDER/
+    // _lastActiveTab/_tabScrollY/_createViewOpen viven juntas más abajo (ver switchTab).
 
     // Solo true justo al entrar de verdad a la vista (cambiar de pestaña) — si no, cada
     // vez que renderHistory() se llama por un cambio chico (marcar pagada, borrar,
@@ -3403,6 +3379,151 @@
       restored.forEach(_syncMovement);
       _refreshCurrentView();
       showToast('Movimiento restaurado', 'success');
+    }
+
+    // ═══════════════════════ Pestaña Fondos ═══════════════════════
+    let _openFundId = null;   // fondo cuya página está abierta (null = lista de fondos)
+
+    function _fundCardHTML(f, { animate = false, delay = 0 } = {}) {
+      const { have, owed } = fundBalance(f.id);
+      const pct = f.goal > 0 ? Math.max(0, Math.min(100, have / f.goal * 100)) : 0;
+      const accent = escapeHTML(f.color || '#5b8fa8');
+      return `
+        <div class="invoice-card fund-card" data-card-id="${f.id}" style="${animate ? `animation-delay:${delay}ms;` : 'animation:none;'}border-left:4px solid ${accent};">
+          <div class="invoice-card-info" data-action="fund-open" data-id="${f.id}" style="cursor:pointer;">
+            <div class="invoice-card-num">${escapeHTML(f.name)}</div>
+            <div class="invoice-card-client" style="color:#2e7d32;">Tienes ${formatMoney(have)}</div>
+            ${owed > 0 ? `<div class="badge-pulse" style="color:#c0540a;font-size:0.8rem;font-weight:600;margin-top:2px;">Debes ${formatMoney(owed)}</div>` : ''}
+            ${f.goal > 0 ? `<div class="goal-bar"><span style="width:${pct.toFixed(1)}%;background:${accent};"></span></div>
+            <div style="font-size:0.78rem;color:var(--text-light);margin-top:3px;">${formatMoney(have)} de ${formatMoney(f.goal)} · ${pct.toFixed(0)}%</div>` : ''}
+          </div>
+          <div class="invoice-card-actions">
+            <div class="overflow-wrap">
+              <button class="btn btn-ghost btn-sm overflow-trigger" data-kind="fund" data-id="${f.id}" aria-label="Más acciones" aria-haspopup="true" style="padding:6px 10px;font-size:1.1rem;line-height:1;">⋮</button>
+            </div>
+          </div>
+        </div>`;
+    }
+    function renderFunds() {
+      const el = document.getElementById('funds-list');
+      const banner = document.getElementById('funds-banner');
+      if (funds.length === 0) {
+        banner.style.display = 'none';
+        el.innerHTML = `<div class="empty-state"><p><strong>No tienes fondos todavía.</strong><br>Un fondo es una alcancía con nombre. Crea el primero con <b>+ Nuevo fondo</b>.</p></div>`;
+        _animateListEntrance = false;
+        return;
+      }
+      const { have, owed } = fundBalance(null);
+      banner.style.display = 'flex';
+      banner.style.animation = _animateListEntrance ? '' : 'none';
+      banner.innerHTML = `
+        <div class="banner-stat"><span class="lbl">Fondos</span><span class="val">${funds.length}</span></div>
+        <div class="banner-divider"></div>
+        <div class="banner-stat banner-paid"><span class="lbl">Tienes</span><span class="val">${formatMoney(have)}</span></div>
+        <div class="banner-divider"></div>
+        <div class="banner-stat banner-pending"><span class="lbl">Debes</span><span class="val">${formatMoney(owed)}</span></div>`;
+      el.innerHTML = funds.map((f, i) => _fundCardHTML(f, { animate: _animateListEntrance, delay: Math.min(i, 7) * 30 })).join('');
+      _animateListEntrance = false;
+    }
+
+    // ── Página de un fondo (sub-vista dentro de #view-funds, abre con genie desde la tarjeta) ──
+    function openFundPage(id, triggerEl) {
+      if (!fundById(id)) return;
+      _openFundId = id;
+      const src = _snapTrigger(triggerEl);   // medir ANTES de esconder la lista (después mediría 0x0)
+      document.getElementById('funds-list-page').style.display = 'none';
+      const page = document.getElementById('fund-page');
+      page.style.display = 'block';
+      renderFundPage();
+      window.scrollTo(0, 0);
+      if (src) {
+        // La página es transparente: se le presta el fondo del body para que crezca como
+        // un bloque sólido (igual que #view-create en showView). Se limpia en closeFundPage.
+        page.style.backgroundImage = getComputedStyle(document.body).backgroundImage;
+        page.style.overflow = 'hidden';
+        _growViewFromRect(page, src);
+      }
+    }
+    function closeFundPage() {
+      const page = document.getElementById('fund-page');
+      _shrinkModalToRect(page, () => {
+        page.style.backgroundImage = ''; page.style.overflow = '';
+        page.style.display = 'none';
+        document.getElementById('funds-list-page').style.display = '';
+        _openFundId = null;
+        renderFunds();
+      });
+    }
+    function renderFundPage() {
+      const f = fundById(_openFundId);
+      if (!f) return;
+      const { have, owed } = fundBalance(f.id);
+      const pct = f.goal > 0 ? Math.max(0, Math.min(100, have / f.goal * 100)) : 0;
+      document.getElementById('fund-page-title').textContent = f.name;
+      document.getElementById('fund-page-menu-btn').dataset.id = f.id;
+      document.getElementById('fund-page-stats').innerHTML = `
+        <div class="history-banner" style="display:flex;animation:none;">
+          <div class="banner-stat banner-paid"><span class="lbl">Tienes</span><span class="val">${formatMoney(have)}</span></div>
+          <div class="banner-divider"></div>
+          <div class="banner-stat banner-pending"><span class="lbl">Debes</span><span class="val">${formatMoney(owed)}</span></div>
+          ${f.goal > 0 ? `<div class="banner-divider"></div><div class="banner-stat"><span class="lbl">Meta ${formatMoney(f.goal)}</span><span class="val">${pct.toFixed(0)}%</span></div>` : ''}
+        </div>
+        ${f.goal > 0 ? `<div class="goal-bar" style="margin:0 0 14px;"><span style="width:${pct.toFixed(1)}%;background:${escapeHTML(f.color || '#5b8fa8')};"></span></div>` : ''}`;
+      const list = sortMovementsForDisplay(movements.filter(m => m.fundId === f.id));
+      _renderMovementList(list, document.getElementById('fund-movement-list'), '<p>Este fondo no tiene movimientos todavía.</p>');
+    }
+
+    // ── Modal nuevo / editar fondo ──
+    let _fundModalId = null;
+    function openFundModal(id, triggerEl) {
+      const f = id ? fundById(id) : null;
+      _fundModalId = f ? f.id : null;
+      document.getElementById('fund-modal-title').textContent = f ? 'Editar fondo' : 'Nuevo fondo';
+      document.getElementById('fund-name').value = f?.name || '';
+      document.getElementById('fund-goal').value = f?.goal ? f.goal : '';
+      document.getElementById('fund-color').value = f?.color || '#5b8fa8';
+      const overlay = document.getElementById('modal-fund');
+      overlay.classList.add('open');
+      _growModalFromRect(overlay.querySelector('.modal'), triggerEl);
+      setTimeout(() => document.getElementById('fund-name').focus(), 80);
+    }
+    function closeFundModal() {
+      const overlay = document.getElementById('modal-fund');
+      _shrinkModalToRect(overlay.querySelector('.modal'), () => overlay.classList.remove('open'));
+      _fundModalId = null;
+    }
+    function saveFundModal() {
+      const name = document.getElementById('fund-name').value.trim();
+      if (!name) { showToast('Ponle un nombre al fondo', 'error'); return; }
+      const goal = round2(document.getElementById('fund-goal').value);
+      const color = document.getElementById('fund-color').value || '';
+      if (_fundModalId) {
+        updateFund(_fundModalId, { name, goal, color });
+        showToast('Fondo actualizado', 'success');
+      } else {
+        if (!addFund({ name, goal, color })) { showToast('No se pudo guardar (almacenamiento lleno)', 'error'); return; }
+        showToast('Fondo creado', 'success');
+      }
+      closeFundModal();
+      _refreshCurrentView();
+      if (document.getElementById('view-create').style.display === 'block') renderCreateForm();
+    }
+    async function confirmDeleteFund(id, triggerEl) {
+      const f = fundById(id);
+      if (!f) return;
+      const n = movements.filter(m => m.fundId === id).length;
+      const msg = `¿Eliminar el fondo "${f.name}"?` + (n ? `\n\nSe borran también sus ${n} movimiento(s). Se descargará un backup antes, por seguridad.` : '');
+      if (!(await _confirmDialog(msg, { confirmLabel: 'Eliminar', danger: true }, triggerEl))) return;
+      if (n) downloadAutoBackup('antes-de-borrar-fondo');
+      takeSnapshot('antes-de-borrar-fondo');
+      deleteFund(id);
+      if (_openFundId === id) {
+        _openFundId = null;
+        document.getElementById('fund-page').style.display = 'none';
+        document.getElementById('funds-list-page').style.display = '';
+      }
+      _refreshCurrentView();
+      showToast(`Fondo "${f.name}" eliminado`, 'info');
     }
 
     // ── Filtros del historial ──
@@ -3650,7 +3771,7 @@
       }
     }
 
-    // presetFundId: viene de la página de un fondo (Tarea 5) — deja ese fondo elegido.
+    // presetFundId: viene del botón "+ Nuevo movimiento" de la página de un fondo — deja ese fondo elegido.
     function openCreate(triggerEl, presetFundId) {
       editingMovementId = null;
       formType = 'in';
@@ -3726,57 +3847,85 @@
       try { sessionStorage.removeItem('bank_draft'); } catch (e) {}
     }
 
-    // triggerEl (opcional): el boton que se toco para cerrar (Volver / Guardar). Si viene,
-    // la vista se encoge hacia la TARJETA de esa factura en el historial (y si no la
-    // encuentra, hacia el propio boton): _growViewFromRect recalcula --gtx/--gty/--gsx/--gsy
-    // apuntandole, sin llegar a animar (_shrinkModalToRect le saca la clase de apertura en
-    // el mismo tick, antes de que el navegador pinte). Sin triggerEl se reusa el viaje de la
-    // apertura, y si tampoco hubo genie, switchTab corre directo (deslizamiento normal).
+    const _TAB_ORDER = { funds: 0, history: 1, dashboard: 2, settings: 3 };
+    const _TAB_VIEWS = { funds: 'view-funds', history: 'view-history', dashboard: 'view-dashboard', settings: 'view-settings' };
+    let _lastActiveTab = '';                 // '' al arrancar: así el primer switchTab nunca cae en el atajo de "misma pestaña"
+    const _tabScrollY = { funds: 0, history: 0, dashboard: 0, settings: 0 };
+    let _createViewOpen = false;
+    let _createFromTab = 'funds';            // pestaña desde la que se abrió el formulario; closeCreate vuelve ahí
+
+    // Solo abre el formulario ('create'). Volver es closeCreate() → switchTab(_createFromTab).
+    function showView(name, triggerEl) {
+      if (name !== 'create') return;
+      const create = document.getElementById('view-create');
+      if (!_createViewOpen) {
+        _createFromTab = _lastActiveTab in _TAB_ORDER ? _lastActiveTab : _getHomeTab();
+        // Capturar el scroll REAL ahora — switchTab no corre en esta transición.
+        _tabScrollY[_createFromTab] = _scrollLocked ? _scrollLockY : window.scrollY;
+      }
+      const from = document.getElementById(_TAB_VIEWS[_createFromTab]);
+      _createViewOpen = true;
+      // El origen se mide ACÁ, antes de esconder la vista de atrás (la tarjeta vive ahí).
+      const srcData = _snapTrigger(triggerEl);
+      create.style.display = 'block';
+      document.getElementById('bottom-nav').style.display = 'none';
+      if (srcData) {
+        // Genie: crece desde la tarjeta/botón CON su fondo y con la vista de atrás todavía
+        // visible. Se saca del flujo (position:fixed) porque ambas son bloques normales.
+        create.classList.remove('slide-in-right', 'slide-out-right');
+        const hr = create.getBoundingClientRect();
+        create.style.transition = 'none';
+        create.style.position = 'fixed';
+        create.style.top = '0px';
+        create.style.left = hr.left + 'px';
+        create.style.width = hr.width + 'px';
+        create.style.zIndex = '50';
+        create.style.backgroundImage = getComputedStyle(document.body).backgroundImage;
+        create.style.overflow = 'hidden';
+        void create.offsetWidth;
+        _growViewFromRect(create, srcData);
+        const onGrown = () => {
+          ['position', 'top', 'left', 'width', 'zIndex', 'backgroundImage', 'overflow'].forEach(p => { create.style[p] = ''; });
+          from.classList.add('slide-out-left');
+          from.classList.remove('slide-in-left');
+          from.style.display = 'none';
+          window.scrollTo(0, 0);
+        };
+        if (_prefersReducedMotion()) onGrown();
+        else create.addEventListener('animationend', e => { if (e.target === create) onGrown(); }, { once: true });
+      } else {
+        from.classList.add('slide-out-left');
+        from.classList.remove('slide-in-left');
+        from.style.display = 'none';
+        create.classList.remove('slide-out-right');
+        create.classList.add('slide-in-right');
+      }
+    }
+
+    // triggerEl (opcional): botón que se tocó para cerrar. La vista se encoge hacia la TARJETA
+    // del movimiento editado si está en pantalla, o hacia ese botón.
     function closeCreate(triggerEl) {
       clearDraft();
       const view = document.getElementById('view-create');
-      const history = document.getElementById('view-history');
-      // OJO: medir ANTES del genie. getBoundingClientRect() devuelve el rect YA
-      // transformado, y _growViewFromRect deja la vista en su estado inicial (del tamano
-      // del destino) — medir despues le fijaria un ancho de ~40px y el contenido se
-      // reflowaria a una columna angosta y larguisima.
-      const r = view.getBoundingClientRect();
+      const from = document.getElementById(_TAB_VIEWS[_createFromTab]);
+      const r = view.getBoundingClientRect();   // medir ANTES del genie
       const genie = !!triggerEl || !!view.style.getPropertyValue('--gsx');
       if (genie) {
-        // Para que el achique se lea como "se guarda en la tarjeta" (igual que el modal de
-        // Clasico, que se encoge SOBRE el historial visible) hace falta que el historial se
-        // vea detras mientras tanto. Pero #view-create y #view-history son bloques normales:
-        // mostrar los dos a la vez empujaria uno debajo del otro. Se saca la vista del flujo
-        // con position:fixed EN EL MISMO LUGAR donde ya estaba (mismo rect => cero salto),
-        // asi el historial ocupa su sitio por debajo sin correr nada.
         view.style.position = 'fixed';
         view.style.top = r.top + 'px';
         view.style.left = r.left + 'px';
         view.style.width = r.width + 'px';
         view.style.zIndex = '50';
-        // El historial quedo con slide-out-left desde que se entro a editar (opacidad 0 y
-        // corrido fuera de pantalla): mostrarlo sin sacarle esa clase lo dejaba invisible.
-        // Se le saca con la transition apagada para que aparezca ya puesto en su lugar, sin
-        // deslizarse compitiendo con el achique.
-        history.style.transition = 'none';
-        history.classList.remove('slide-out-left');
-        history.classList.add('slide-in-left');
-        history.style.display = 'block';
-        void history.offsetWidth;
-        history.style.transition = '';
-        // #view-create es transparente: al achicarse se veia el contenido flotando sin
-        // panel. Se le presta el fondo de la pagina (y overflow:hidden para que las
-        // esquinas redondeadas del keyframe recorten) para que se cierre como un bloque
-        // solido que entra en la tarjeta.
+        from.style.transition = 'none';
+        from.classList.remove('slide-out-left');
+        from.classList.add('slide-in-left');
+        from.style.display = 'block';
+        void from.offsetWidth;
+        from.style.transition = '';
         view.style.backgroundImage = getComputedStyle(document.body).backgroundImage;
         view.style.overflow = 'hidden';
       }
       if (triggerEl) {
-        // Destino: la tarjeta de esta factura. Recien aca se puede medir — con el historial
-        // oculto daba 0x0. Si no esta (factura nueva todavia sin tarjeta, o filtrada) o si
-        // quedo fuera de la pantalla, se usa el boton que se toco.
-        // editingInvoiceId → editingMovementId (Tarea 2): mismo rol (id de lo que se
-        // está editando), pero closeCreate en sí se deja igual — Tarea 5 la reescribe.
         const card = editingMovementId
           ? document.querySelector(`.invoice-card[data-card-id="${CSS.escape(editingMovementId)}"]`)
           : null;
@@ -3788,18 +3937,13 @@
         _growViewFromRect(view, target);
       }
       _shrinkModalToRect(view, () => {
-        view.style.backgroundImage = '';
-        view.style.overflow = '';
-        view.style.position = '';
-        view.style.top = '';
-        view.style.left = '';
-        view.style.width = '';
-        view.style.zIndex = '';
-        switchTab('history');
+        ['backgroundImage', 'overflow', 'position', 'top', 'left', 'width', 'zIndex'].forEach(p => { view.style[p] = ''; });
+        switchTab(_createFromTab);
       });
     }
 
     function showDefaultView() {
+      // Borrador sin guardar (se recargó a mitad de una edición): reabrir el formulario.
       const hasDraft = loadDraft();
       if (hasDraft && (editingMovementId || Number(formAmount) > 0 || formNote)) {
         setUnsavedChanges(true);
@@ -3807,11 +3951,8 @@
         showView('create');
         return;
       }
-      showView('history');
-      buildYearChips();
-      buildFundChips();
       _animateListEntrance = true;
-      filterMovements();
+      switchTab(_getHomeTab());
       setTimeout(positionBnLens, 50);
       updateNewsDot();
       setTimeout(() => showChangelog(), 900);
@@ -3840,83 +3981,45 @@
       _resizeRaf = requestAnimationFrame(() => { _resizeRaf = null; _bnLensReady = false; positionBnLens(); });
     });
 
-    // Slide direccional (Fit-M): la vista nueva entra desde el lado hacia donde te
-    // mueves en la barra inferior (Facturación‹›Dashboard‹›Ajustes).
-    const _TAB_ORDER = { history: 0, dashboard: 1, settings: 2 };
-    let _lastActiveTab = 'history';
-    const _tabScrollY = { history: 0, dashboard: 0, settings: 0 };
-
     function switchTab(tab) {
-      const historyView = document.getElementById('view-history');
-      const dashboardView = document.getElementById('view-dashboard');
+      const views = {};
+      for (const k in _TAB_VIEWS) views[k] = document.getElementById(_TAB_VIEWS[k]);
       const createView = document.getElementById('view-create');
-      const settingsView = document.getElementById('view-settings');
-      const _views = { history: historyView, dashboard: dashboardView, settings: settingsView };
-      // closeCreate() llama switchTab('history') para volver del formulario — en ese caso
-      // _lastActiveTab sigue en 'history' (entrar a crear/editar usa showView(), no
-      // switchTab) Y closeCreate ya forzó historyView a display:block de antemano para el
-      // genie. Sin el guard de _createViewOpen, este atajo de "misma pestaña, no hacer
-      // nada" se colaba justo ahí: createView nunca llegaba a esconderse (quedaba pegado
-      // encima del historial) y el scroll se reseteaba a 0 en vez de restaurar el real.
-      if (!_createViewOpen && tab === _lastActiveTab && _views[tab] && _views[tab].style.display !== 'none') {
-        if (window.scrollY > 0) {
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-          _tabScrollY[tab] = 0;
-        }
+      // Misma pestaña ya visible: solo sube al principio (ver pitfall #15 en CLAUDE.md de Facturas).
+      if (!_createViewOpen && tab === _lastActiveTab && views[tab] && views[tab].style.display !== 'none') {
+        if (window.scrollY > 0) { window.scrollTo({ top: 0, behavior: 'smooth' }); _tabScrollY[tab] = 0; }
         return;
       }
       const _prevTab = _lastActiveTab;
       const _returningFromCreate = _createViewOpen;
       _createViewOpen = false;
-      // Con un modal abierto el body queda position:fixed (ver _updateBodyScrollLock) y
-      // window.scrollY siempre da 0 — hay que guardar la posición real (_scrollLockY),
-      // si no, volver de un modal a otra pestaña y luego a esta la reseteaba a 0.
-      // Si venimos del formulario, _tabScrollY.history ya se capturó bien al ENTRAR a
-      // crear/editar (ver showView) — acá scrollY es el del formulario, no el del
-      // historial, así que no hay que pisarlo con ese valor.
       if (_prevTab in _tabScrollY && !_returningFromCreate) _tabScrollY[_prevTab] = _scrollLocked ? _scrollLockY : window.scrollY;
       if (tab in _TAB_ORDER) _lastActiveTab = tab;
 
-      // (El modo selección de facturas se borró en la Tarea 2 junto con el resto del
-      // formulario viejo — no hay nada que cerrar acá hasta que Tarea 3/4 lo rehagan.)
-
-      // Mostrar barra (create la oculta; cualquier otro tab la restaura)
       document.getElementById('bottom-nav').style.display = '';
-
-      // Actualizar bottom nav
       document.querySelectorAll('.bn-item[data-nav]').forEach(b => b.classList.remove('active'));
-      const activeBtn = document.querySelector(`.bn-item[data-nav="${tab}"]`);
-      if (activeBtn) activeBtn.classList.add('active');
+      document.querySelector(`.bn-item[data-nav="${tab}"]`)?.classList.add('active');
       positionBnLens();
 
-      if (tab === 'history') {
-        historyView.classList.remove('slide-out-left');
-        createView.classList.remove('slide-in-right', 'slide-out-right');
-        createView.style.display = 'none';
-        historyView.style.display = 'block';
-        dashboardView.style.display = 'none';
-        if (settingsView) settingsView.style.display = 'none';
+      createView.classList.remove('slide-in-right', 'slide-out-right');
+      createView.style.display = 'none';
+      for (const k in views) views[k].style.display = k === tab ? 'block' : 'none';
+      const target = views[tab];
+      target.classList.remove('slide-out-left');
+
+      if (tab === 'funds') {
+        document.getElementById('fund-page').style.display = _openFundId ? 'block' : 'none';
+        document.getElementById('funds-list-page').style.display = _openFundId ? 'none' : '';
+        if (_openFundId) renderFundPage(); else renderFunds();
+      } else if (tab === 'history') {
         clearDraft();
         buildYearChips();
         buildFundChips();
-        // Sin animación de entrada por tarjeta acá: esta vista ya viene con su propio
-        // deslizamiento (ver el bloque de tab-slide más abajo) — animar las tarjetas
-        // A LA VEZ se veía como que la lista parpadeaba en vez de un solo movimiento.
         filterMovements();
       } else if (tab === 'dashboard') {
-        createView.style.display = 'none';
-        historyView.style.display = 'none';
-        dashboardView.style.display = 'block';
-        if (settingsView) settingsView.style.display = 'none';
         _suppressDashboardCardEntrance = true;
         renderDashboard();
       } else if (tab === 'settings') {
-        createView.style.display = 'none';
-        historyView.style.display = 'none';
-        dashboardView.style.display = 'none';
-        if (settingsView) settingsView.style.display = 'block';
-        // Siempre arranca en la lista normal de Ajustes — si quedó abierta alguna
-        // sub-vista (cambiaste de pestaña sin volver), se resetea sola.
         SETTINGS_SUBVIEWS.forEach(v => { const el = document.getElementById(v); if (el) el.style.display = 'none'; });
         document.querySelector('.settings-page').style.display = '';
         const email = _currentUser?.email || '';
@@ -3924,19 +4027,17 @@
         if (emailEl) emailEl.textContent = email || '—';
         const avatarEl = document.getElementById('account-avatar');
         if (avatarEl) avatarEl.textContent = email ? email[0].toUpperCase() : '?';
-        _updateHomeTabUI();
         applyLiteMode();
         updateNewsDot();
+        _updateHomeTabUI();
       }
 
       if (tab in _TAB_ORDER && _prevTab in _TAB_ORDER && tab !== _prevTab) {
         const dir = _TAB_ORDER[tab] > _TAB_ORDER[_prevTab] ? 'tab-slide-right' : 'tab-slide-left';
-        const targetView = tab === 'history' ? historyView : tab === 'dashboard' ? dashboardView : settingsView;
-        targetView.classList.remove('tab-slide-right', 'tab-slide-left');
-        void targetView.offsetWidth;
-        targetView.classList.add(dir);
+        target.classList.remove('tab-slide-right', 'tab-slide-left');
+        void target.offsetWidth;
+        target.classList.add(dir);
       }
-
       window.scrollTo(0, _tabScrollY[tab] || 0);
     }
 
@@ -4587,15 +4688,24 @@
       // del botón (32px), así que el ancho nunca animaba y la burbuja arrancaba
       // como una cápsula chata de 160×31 en vez de un círculo. Igual que en
       // Fit-F/Fit-M, donde el min-width está en el `inner`.
-      const m = movements.find(x => x.id === id);
-      const canRepay = !!(m && m.type === 'loan' && !isLoanSettled(m));
-      menu.innerHTML = '<div class="card-menu-inner" style="min-width:160px;opacity:0;transition:opacity .12s ease .1s;">' +
-        `<button class="dropdown-item" data-action="edit" data-id="${id}">Editar</button>` +
-        (canRepay ? `<button class="dropdown-item" data-action="repay" data-id="${id}">Devolver</button>` : '') +
-        `<button class="dropdown-item" data-action="duplicate" data-id="${id}">Duplicar</button>` +
-        `<div class="dropdown-divider"></div>` +
-        `<button class="dropdown-item danger" data-action="delete" data-id="${id}">Eliminar</button>` +
-        '</div>';
+      if (btn.dataset.kind === 'fund') {
+        menu.innerHTML = '<div class="card-menu-inner" style="min-width:200px;opacity:0;transition:opacity .12s ease .1s;">' +
+          `<button class="dropdown-item" data-action="fund-edit" data-id="${id}">Editar</button>` +
+          `<button class="dropdown-item" data-action="fund-pdf" data-id="${id}">Estado del fondo (PDF)</button>` +
+          `<div class="dropdown-divider"></div>` +
+          `<button class="dropdown-item danger" data-action="fund-delete" data-id="${id}">Eliminar</button>` +
+          '</div>';
+      } else {
+        const m = movements.find(x => x.id === id);
+        const canRepay = !!(m && m.type === 'loan' && !isLoanSettled(m));
+        menu.innerHTML = '<div class="card-menu-inner" style="min-width:160px;opacity:0;transition:opacity .12s ease .1s;">' +
+          `<button class="dropdown-item" data-action="edit" data-id="${id}">Editar</button>` +
+          (canRepay ? `<button class="dropdown-item" data-action="repay" data-id="${id}">Devolver</button>` : '') +
+          `<button class="dropdown-item" data-action="duplicate" data-id="${id}">Duplicar</button>` +
+          `<div class="dropdown-divider"></div>` +
+          `<button class="dropdown-item danger" data-action="delete" data-id="${id}">Eliminar</button>` +
+          '</div>';
+      }
 
       menu._btn = btn;
       const rect = btn.getBoundingClientRect();
@@ -4851,6 +4961,24 @@
       const id = btn.dataset.id;
 
       const cardOf = () => document.querySelector(`.invoice-card[data-card-id="${CSS.escape(id)}"]`) || btn;
+      if (action === 'fund-open') {
+        openFundPage(id, btn.closest('.fund-card') || btn);
+        return;
+      } else if (action === 'fund-edit') {
+        const src = _snapTrigger(document.getElementById('global-card-menu')._btn) || btn;
+        closeAllDropdowns();
+        openFundModal(id, src);
+        return;
+      } else if (action === 'fund-pdf') {
+        closeAllDropdowns();
+        generateFundStatementPDF(id);
+        return;
+      } else if (action === 'fund-delete') {
+        const src = _snapTrigger(document.getElementById('global-card-menu')._btn) || btn;
+        closeAllDropdowns();
+        confirmDeleteFund(id, src);
+        return;
+      }
       if (action === 'edit') {
         // Abre DESDE la tarjeta (no desde el item del menú) — es el punto al que vuelve al cerrar.
         editMovement(id, cardOf());
@@ -5123,7 +5251,8 @@
       'modal-password': closePasswordModal,
       'modal-import': () => document.getElementById('modal-import').classList.remove('open'),
       'modal-confirm': closeConfirmModal,
-      'modal-changelog': closeChangelog
+      'modal-changelog': closeChangelog,
+      'modal-fund': closeFundModal
     };
 
     document.addEventListener('keydown', (e) => {
