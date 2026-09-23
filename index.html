@@ -2204,9 +2204,19 @@
   <div id="global-card-menu" class="overflow-dropdown" style="display:none;"></div>
   <div id="dash-actions-menu" class="overflow-dropdown" style="display:none;">
     <div class="card-menu-inner" style="min-width:230px;opacity:0;transition:opacity .12s ease .1s;">
+      <button class="dropdown-item" onclick="closeDashMenu();generateSummaryPDF()">
+        <div>Resumen general (PDF)</div>
+        <div style="font-size:0.72rem;color:var(--text-light);font-weight:400;white-space:normal;margin-top:1px;">Todos los fondos con sus saldos</div>
+      </button>
+      <!-- Solo con un fondo elegido en el selector — ver _updateFundStatementMenuItem() -->
+      <button class="dropdown-item" id="dash-menu-statement-item" style="display:none;" onclick="closeDashMenu();generateFundStatementPDF(dashboardFundFilter)">
+        <div>Estado del fondo (PDF)</div>
+        <div style="font-size:0.72rem;color:var(--text-light);font-weight:400;white-space:normal;margin-top:1px;">Movimientos y saldo del fondo elegido</div>
+      </button>
+      <div class="dropdown-divider"></div>
       <button class="dropdown-item" onclick="closeDashMenu();exportMovementsCSV()">
-        <div>Exportar CSV</div>
-        <div style="font-size:0.72rem;color:var(--text-light);font-weight:400;white-space:normal;margin-top:1px;">Para abrir en Excel / contabilidad</div>
+        <div>Exportar movimientos (CSV)</div>
+        <div style="font-size:0.72rem;color:var(--text-light);font-weight:400;white-space:normal;margin-top:1px;">Para abrir en Excel</div>
       </button>
     </div>
   </div>
@@ -4058,8 +4068,158 @@
     // deslizamiento de toda la vista) — así las tarjetas no repiten su entrada encima.
     let _suppressDashboardCardEntrance = false;
 
+    // ═══════════════════════ Resumen ═══════════════════════
+    function setDashboardFundFilter(id) { dashboardFundFilter = id || null; renderDashboard(); }
+
+    function calculateMetrics(list) {
+      const t = { in: 0, loan: 0, repay: 0, out: 0, count: list.length, overdueCount: 0, overdueSum: 0 };
+      const today = todayISO();
+      for (const m of list) {
+        t[m.type] += m.amount;
+        if (isLoanOverdue(m, today)) { t.overdueCount++; t.overdueSum += loanBalance(m).balance; }
+      }
+      t.net = round2(t.in + t.repay - t.loan - t.out);
+      return t;
+    }
+    // Saldo ("Tienes") al cierre de cada mes/día del período — mismo formato que consume
+    // drawBarChart/drawLineChart: [{ month|day, sortKey, revenue }].
+    function getBalanceByPeriod(list) {
+      const range = dashboardDateRange();
+      if (!range) return [];
+      const inRange = new Set(list.map(m => m.id));
+      // Arranque: todo lo anterior al período (respetando el filtro de fondo)
+      let running = 0;
+      for (const m of movements) {
+        if (inRange.has(m.id)) continue;
+        if (dashboardFundFilter && m.fundId !== dashboardFundFilter) continue;
+        if (new Date(m.date + 'T12:00:00') < range.startDate) running += MOV_SIGN[m.type] * m.amount;
+      }
+      const monthLabels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+      const map = {}, out = [];
+      [...list].sort((a, b) => a.date.localeCompare(b.date) || (a.id > b.id ? 1 : -1)).forEach(m => {
+        running += MOV_SIGN[m.type] * m.amount;
+        const d = new Date(m.date + 'T12:00:00');
+        const key = range.groupByMonth ? `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}` : m.date;
+        if (!map[key]) {
+          map[key] = range.groupByMonth
+            ? { month: monthLabels[d.getMonth()] + ' ' + String(d.getFullYear()).slice(2), sortKey: key, revenue: 0 }
+            : { day: key.slice(5), sortKey: key, revenue: 0 };
+          out.push(map[key]);
+        }
+        map[key].revenue = round2(running);
+      });
+      return out;
+    }
+    function _fundsTableHTML() {
+      return `<table class="items-table"><thead><tr><th>Fondo</th><th style="text-align:right;">Tienes</th><th style="text-align:right;">Debes</th></tr></thead><tbody>` +
+        funds.map(f => {
+          const b = fundBalance(f.id);
+          return `<tr style="cursor:pointer;" onclick="setDashboardFundFilter('${f.id}')"><td>${escapeHTML(f.name)}</td><td style="text-align:right;">${formatMoney(b.have)}</td><td style="text-align:right;">${b.owed > 0 ? formatMoney(b.owed) : '—'}</td></tr>`;
+        }).join('') + '</tbody></table>';
+    }
+    function _updateFundStatementMenuItem() {
+      const show = !!dashboardFundFilter;
+      const item = document.getElementById('dash-menu-statement-item');
+      if (item) item.style.display = show ? 'block' : 'none';
+    }
+
     function renderDashboard() {
-      document.getElementById('dashboard-content').innerHTML = '<div class="empty-state"><p>Resumen — en construcción (Tarea 6).</p></div>';
+      _updateFundStatementMenuItem();
+      const list = getDashboardMovements();
+      const mt = calculateMetrics(list);
+      const totals = fundBalance(dashboardFundFilter);
+      const chartData = getBalanceByPeriod(list);
+      const el = document.getElementById('dashboard-content');
+      const customInputsHTML = dashboardPeriod === 'custom' ? `
+          <div class="control-group">
+            <input type="date" id="custom-from" value="${dashboardCustomFrom || ''}" onchange="dashboardCustomFrom = this.value; renderDashboard()">
+            <span>a</span>
+            <input type="date" id="custom-to" value="${dashboardCustomTo || ''}" onchange="dashboardCustomTo = this.value; renderDashboard()">
+          </div>` : '';
+      const fundSelect = funds.length > 1 ? `
+        <select onchange="setDashboardFundFilter(this.value)" style="padding:6px 10px;border:1px solid var(--blue-light);border-radius:var(--radius);font-size:0.85rem;background:var(--lg-card);color:var(--text);">
+          <option value="">Todos los fondos</option>
+          ${funds.map(f => `<option value="${f.id}"${dashboardFundFilter === f.id ? ' selected' : ''}>${escapeHTML(f.name)}</option>`).join('')}
+        </select>` : '';
+      const plural = (n, s) => n + ' ' + s + (n !== 1 ? 's' : '');
+      el.innerHTML = `
+        <div class="dashboard-grid">
+          <div class="dashboard-card" style="grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div style="font-size:0.75rem;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);">Período</div>
+              <div style="font-weight:700;font-size:1.05rem;">${escapeHTML(dashboardPeriodLabel())}</div>
+              <div style="font-size:0.82rem;color:var(--text-light);margin-top:2px;">${plural(mt.count, 'movimiento')}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              ${fundSelect}
+              <button class="btn btn-ghost btn-sm dash-menu-trigger" onclick="toggleDashMenu(this)" aria-label="Opciones del resumen" style="font-size:1.3rem;padding:5px 11px;line-height:1;">⋮</button>
+            </div>
+          </div>
+
+          <div class="dashboard-card" style="grid-column:1 / -1;">
+            <h3>Hoy</h3>
+            <div class="paid-pending-grid">
+              <div class="pp-box paid">
+                <div class="pp-label">Tienes</div>
+                <div class="pp-value">${formatMoney(totals.have)}</div>
+                <div class="pp-sub">${dashboardFundFilter ? escapeHTML(fundName(dashboardFundFilter)) : plural(funds.length, 'fondo')}</div>
+              </div>
+              <div class="pp-box pending">
+                <div class="pp-label">Debes</div>
+                <div class="pp-value">${formatMoney(totals.owed)}</div>
+                <div class="pp-sub">${mt.overdueCount ? plural(mt.overdueCount, 'préstamo') + ' vencido' + (mt.overdueCount !== 1 ? 's' : '') : 'nada vencido'}</div>
+              </div>
+              <div class="pp-box total-box">
+                <div class="pp-label">Ahorro neto del período</div>
+                <div class="pp-value">${formatMoney(mt.net)}</div>
+                <div class="pp-sub">entradas − salidas</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-card" style="grid-column:1 / -1;">
+            <h3>Movimientos del período</h3>
+            <div class="metrics-row">
+              <div class="metric-box"><div class="metric-label">Metiste</div><div class="metric-value">${formatMoney(mt.in)}</div></div>
+              <div class="metric-box"><div class="metric-label">Sacaste prestado</div><div class="metric-value">${formatMoney(mt.loan)}</div></div>
+              <div class="metric-box"><div class="metric-label">Devolviste</div><div class="metric-value">${formatMoney(mt.repay)}</div></div>
+              <div class="metric-box"><div class="metric-label">Gastaste</div><div class="metric-value">${formatMoney(mt.out)}</div></div>
+            </div>
+          </div>
+
+          ${!dashboardFundFilter && funds.length > 1 ? `<div class="dashboard-card" style="grid-column:1 / -1;"><h3>Por fondo</h3>${_fundsTableHTML()}</div>` : ''}
+
+          <div class="dashboard-card" style="grid-column:1 / -1;">
+            <h3>Cómo va tu ahorro</h3>
+            <div class="chart-controls-row">
+              <div class="control-group">
+                <label>Período</label>
+                <button class="filter-chip ${dashboardPeriod === 'all' ? 'active' : ''}" onclick="dashboardPeriod='all'; renderDashboard()">Todo</button>
+                <button class="filter-chip ${dashboardPeriod === 'months12' ? 'active' : ''}" onclick="dashboardPeriod='months12'; renderDashboard()">12m</button>
+                <button class="filter-chip ${dashboardPeriod === 'days30' ? 'active' : ''}" onclick="dashboardPeriod='days30'; renderDashboard()">30d</button>
+                <button class="filter-chip ${dashboardPeriod === 'custom' ? 'active' : ''}" onclick="dashboardPeriod='custom'; renderDashboard()">Pers.</button>
+              </div>
+              <div class="divider"></div>
+              <div class="control-group">
+                <label>Tipo</label>
+                <button class="filter-chip ${dashboardChartType === 'bar' ? 'active' : ''}" onclick="dashboardChartType='bar'; renderDashboard()">Barras</button>
+                <button class="filter-chip ${dashboardChartType === 'line' ? 'active' : ''}" onclick="dashboardChartType='line'; renderDashboard()">Línea</button>
+              </div>
+              ${customInputsHTML ? '<div class="divider"></div>' + customInputsHTML : ''}
+            </div>
+            <div class="chart-wrap"><canvas id="revenue-chart" class="chart-canvas"></canvas></div>
+            <div style="font-size:0.78rem;color:var(--text-light);margin-top:6px;">Saldo al cierre de cada ${dashboardDateRange()?.groupByMonth ? 'mes' : 'día'}</div>
+          </div>
+        </div>`;
+
+      if (_suppressDashboardCardEntrance) {
+        el.querySelector('.dashboard-grid')?.classList.add('no-entrance-anim');
+        _suppressDashboardCardEntrance = false;
+      }
+      setTimeout(() => {
+        if (dashboardChartType === 'bar') drawBarChart('revenue-chart', chartData);
+        else drawLineChart('revenue-chart', chartData);
+      }, 0);
     }
 
     // ── Chart helpers ──────────────────────────────────────────
