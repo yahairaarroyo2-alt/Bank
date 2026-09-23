@@ -4265,6 +4265,10 @@
     }
 
     // ── Borrar con deshacer (10 s) ──
+    // ponytail: un solo slot — borrar un segundo movimiento antes de los 10s del primero
+    // pisa `lastDeleted` y el toast viejo, si se toca "Deshacer", restaura el borrado
+    // nuevo en vez del que decía. Mismo límite que tenía Facturas (lastDeletedInvoice);
+    // solución si molesta: cola de pendientes en vez de una sola variable.
     let lastDeleted = null;   // array de movimientos borrados (préstamo + sus devoluciones)
     async function confirmDelete(id, triggerEl) {
       const m = movements.find(x => x.id === id);
