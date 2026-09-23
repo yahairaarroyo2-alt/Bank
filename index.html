@@ -1764,13 +1764,13 @@
   <div id="view-history">
     <div class="container">
       <div class="history-actions" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-        <button class="btn btn-primary" onclick="openCreate(this)">+ Nueva Factura</button>
+        <button class="btn btn-primary" onclick="openCreate(this)">+ Nuevo movimiento</button>
       </div>
       <div class="history-controls">
         <div style="display:flex;gap:8px;align-items:center;">
-          <input id="search-input" type="text" placeholder="Buscar por cliente, #factura o servicio"
+          <input id="search-input" type="text" placeholder="Buscar por nota, fondo o monto"
             style="flex:1;min-width:0;padding: 12px; font-size: 1rem; box-sizing: border-box;"
-            oninput="debouncedFilterInvoices()">
+            oninput="debouncedFilterMovements()">
           <button class="btn btn-ghost btn-sm" id="filter-toggle-btn" onclick="toggleFilterPanel()"
             aria-label="Filtros" title="Filtros" style="position:relative;flex-shrink:0;padding:9px 12px;">
             <svg width="17" height="17" viewBox="0 0 20 20" fill="none" style="display:block;">
@@ -1781,33 +1781,33 @@
         </div>
         <div id="filter-panel" class="filter-panel" style="display:none;">
           <div class="history-filter-row">
-            <span class="filter-label">Estado:</span>
-            <button class="filter-chip status-chip active" id="fchip-all"     onclick="setStatusFilter('all')">Todas</button>
-            <button class="filter-chip status-chip"        id="fchip-pending" onclick="setStatusFilter('pending')">Pendientes</button>
-            <button class="filter-chip status-chip"        id="fchip-overdue" onclick="setStatusFilter('overdue')">Vencidas</button>
-            <button class="filter-chip status-chip"        id="fchip-paid"    onclick="setStatusFilter('paid')">Pagadas</button>
+            <span class="filter-label">Tipo:</span>
+            <button class="filter-chip status-chip active" id="fchip-all"     onclick="setTypeFilter('all')">Todos</button>
+            <button class="filter-chip status-chip"        id="fchip-in"      onclick="setTypeFilter('in')">Meter</button>
+            <button class="filter-chip status-chip"        id="fchip-loan"    onclick="setTypeFilter('loan')">Sacar prestado</button>
+            <button class="filter-chip status-chip"        id="fchip-repay"   onclick="setTypeFilter('repay')">Devolver</button>
+            <button class="filter-chip status-chip"        id="fchip-out"     onclick="setTypeFilter('out')">Gastar</button>
+            <button class="filter-chip status-chip"        id="fchip-overdue" onclick="setTypeFilter('overdue')">Vencidos</button>
           </div>
           <div class="history-filter-row" id="year-filter-row" style="display:none;">
             <span class="filter-label">Año:</span>
             <div id="year-chips" style="display:flex;gap:8px;flex-wrap:nowrap;"></div>
           </div>
-          <div class="history-filter-row" id="client-filter-row" style="display:none;">
-            <span class="filter-label">Cliente:</span>
-            <div id="client-chips" style="display:flex;gap:8px;flex-wrap:nowrap;"></div>
+          <div class="history-filter-row" id="fund-filter-row" style="display:none;">
+            <span class="filter-label">Fondo:</span>
+            <div id="fund-chips" style="display:flex;gap:8px;flex-wrap:nowrap;"></div>
           </div>
           <div class="history-filter-row">
             <span class="filter-label">Orden:</span>
-            <button class="filter-chip active" id="schip-number" onclick="setSortMode('number')">Reciente #</button>
-            <button class="filter-chip" id="schip-date" onclick="setSortMode('date')">Fecha</button>
+            <button class="filter-chip active" id="schip-date" onclick="setSortMode('date')">Fecha</button>
             <button class="filter-chip" id="schip-amount-desc" onclick="setSortMode('amount-desc')">Monto ↓</button>
             <button class="filter-chip" id="schip-amount-asc" onclick="setSortMode('amount-asc')">Monto ↑</button>
           </div>
         </div>
       </div>
       <div id="history-banner" class="history-banner" style="display:none;"></div>
-      <div id="recurring-banner" style="display:none;"></div>
       <div id="search-results" style="margin-bottom: 8px; font-size: 0.85rem; color: var(--text-light);"></div>
-      <div id="invoice-list"></div>
+      <div id="movement-list"></div>
     </div>
   </div>
 
@@ -4173,269 +4173,174 @@
     // golpe, lo que se ve como que la lista entera parpadea.
     let _animateListEntrance = false;
 
-    // Franja de totales arriba del historial — separada de renderHistory() para poder
-    // refrescarla sola (p.ej. al marcar pagada una factura) sin recrear las tarjetas.
+    // Franja de totales arriba de la lista — Tienes/Debes del fondo filtrado (o de todos).
+    function _historyHasFilter() { return !!(searchQuery || historyTypeFilter !== 'all' || historyYearFilter || historyFundFilter); }
     function _updateHistoryBannerStats() {
       const banner = document.getElementById('history-banner');
       if (!banner) return;
-      const hasFilter = searchQuery || historyStatusFilter !== 'all' || historyYearFilter || historyClientFilter;
-      const displayInvoices = hasFilter ? filteredInvoices : invoices;
-      if (displayInvoices.length === 0) { banner.style.display = 'none'; return; }
-      const totalAmt   = displayInvoices.reduce((s, i) => s + (Number(i.total) || 0), 0);
-      const pendingInv = displayInvoices.filter(i => !i.paid);
-      const pendingAmt = pendingInv.reduce((s, i) => s + (Number(i.total) || 0), 0);
-      const paidInv    = displayInvoices.filter(i => i.paid);
-      const paidAmt    = paidInv.reduce((s, i) => s + (Number(i.total) || 0), 0);
+      if (movements.length === 0) { banner.style.display = 'none'; return; }
+      const { have, owed } = fundBalance(historyFundFilter);
+      const shown = _historyHasFilter() ? filteredMovements : movements;
       banner.style.display = 'flex';
-      // Solo anima al entrar de verdad (cold start), no en cada actualización chica ni
-      // al cambiar de pestaña.
       banner.style.animation = _animateListEntrance ? '' : 'none';
       banner.innerHTML = `
-        <div class="banner-stat">
-          <span class="lbl">Facturas</span>
-          <span class="val">${displayInvoices.length}</span>
-        </div>
+        <div class="banner-stat"><span class="lbl">Movimientos</span><span class="val">${shown.length}</span></div>
         <div class="banner-divider"></div>
-        <div class="banner-stat">
-          <span class="lbl">Total</span>
-          <span class="val">${formatMoney(totalAmt)}</span>
-        </div>
+        <div class="banner-stat banner-paid"><span class="lbl">Tienes</span><span class="val">${formatMoney(have)}</span></div>
         <div class="banner-divider"></div>
-        <div class="banner-stat banner-pending">
-          <span class="lbl">Por cobrar (${pendingInv.length})</span>
-          <span class="val">${formatMoney(pendingAmt)}</span>
-        </div>
-        <div class="banner-divider"></div>
-        <div class="banner-stat banner-paid">
-          <span class="lbl">Cobrado (${paidInv.length})</span>
-          <span class="val">${formatMoney(paidAmt)}</span>
-        </div>`;
+        <div class="banner-stat banner-pending"><span class="lbl">Debes</span><span class="val">${formatMoney(owed)}</span></div>`;
     }
 
-    // HTML de UNA tarjeta del historial — la usa renderHistory() (lista completa) y
-    // _updateInvoiceCardInPlace() (una tarjeta sola, sin recrear las demás: recomponer
-    // el backdrop-filter de todas en cada cambio chico es el mayor costo de fluidez/
-    // batería del historial con muchas facturas).
-    function _invoiceCardHTML(inv, today, { animate = false, delay = 0 } = {}) {
-      const _overdue = !inv.paid && inv.dueDate && inv.dueDate < today;
-      const _overdueBadge = _overdue
-        ? ` <span class="badge-overdue" style="display:inline-block;background:#ffebee;color:#c62828;font-size:0.7rem;font-weight:700;padding:1px 7px;border-radius:10px;vertical-align:middle;">Vencida</span>`
+    // HTML de UNA tarjeta de movimiento (la usan la lista general y la página de un fondo)
+    function _movementCardHTML(m, today, { animate = false, delay = 0 } = {}) {
+      const isLoan = m.type === 'loan';
+      const bal = isLoan ? loanBalance(m) : null;
+      const settled = isLoan && bal.balance <= 0;
+      const overdue = isLoan && !settled && m.dueDate && m.dueDate < today;
+      const badge = overdue
+        ? ` <span class="badge-overdue" style="display:inline-block;background:#ffebee;color:#c62828;font-size:0.7rem;font-weight:700;padding:1px 7px;border-radius:10px;vertical-align:middle;">Vencido</span>`
+        : settled ? ` <span style="display:inline-block;background:#e8f5e9;color:#2e7d32;font-size:0.7rem;font-weight:700;padding:1px 7px;border-radius:10px;vertical-align:middle;">Devuelto</span>` : '';
+      const positive = MOV_SIGN[m.type] > 0;
+      const cardStyle = animate ? `animation-delay:${delay}ms;` : 'animation:none;';
+      const sub = isLoan && !settled
+        ? `<div class="badge-pulse" style="color:#c0540a;font-size:0.8rem;font-weight:600;margin-top:2px;">Debes ${formatMoney(bal.balance)}${m.dueDate ? ' · devolver antes del ' + formatDateDisplay(m.dueDate) : ''}</div>`
         : '';
-      const _cardStyle = animate ? `animation-delay:${delay}ms;` : 'animation:none;';
-      const _act = _selectionMode ? 'toggle-select' : 'preview';
-      const _sel = _selectionMode && _selectedIds.has(inv.id);
-      const _checkbox = _selectionMode
-        ? `<div class="sel-check${_sel ? ' on' : ''}" data-action="toggle-select" data-id="${escapeHTML(inv.id)}">${_sel ? '✓' : ''}</div>`
-        : '';
+      const id = escapeHTML(m.id);
       return `
-        <div class="invoice-card${_selectionMode ? ' selecting' : ''}${_sel ? ' selected' : ''}" data-card-id="${escapeHTML(inv.id)}" style="${_cardStyle}" ${_selectionMode ? `data-action="toggle-select" data-id="${escapeHTML(inv.id)}"` : ''}>
-          ${_checkbox}
-          <div class="invoice-card-info" data-action="${_act}" data-id="${escapeHTML(inv.id)}" style="cursor:pointer;">
-            <div class="invoice-card-num">Factura #${inv.number}${_overdueBadge}</div>
-            <div class="invoice-card-client">${escapeHTML(inv.client.name)}</div>
-            <div class="invoice-card-date" style="color:var(--text-light);font-size:0.82rem;margin-top:2px;">${formatDateDisplay(inv.date)}${inv.paid && inv.paidDate ? ` · cobrada ${formatDateDisplay(inv.paidDate)}` : (inv.dueDate ? ` · vence ${formatDateDisplay(inv.dueDate)}` : '')}</div>
-            ${!inv.paid && inv.payments && inv.payments.length > 0 ? `<div class="badge-pulse" style="color:#c0540a;font-size:0.8rem;font-weight:600;margin-top:2px;">Saldo pendiente: ${formatMoney(_invoiceBalance(inv).balance)}</div>` : ''}
+        <div class="invoice-card" data-card-id="${id}" style="${cardStyle}">
+          <div class="invoice-card-info" data-action="edit" data-id="${id}" style="cursor:pointer;">
+            <div class="invoice-card-num">${MOV_TYPES[m.type]}${badge}</div>
+            <div class="invoice-card-client">${escapeHTML(fundName(m.fundId))}${m.note ? ' · ' + escapeHTML(m.note) : ''}</div>
+            <div class="invoice-card-date" style="color:var(--text-light);font-size:0.82rem;margin-top:2px;">${formatDateDisplay(m.date)}</div>
+            ${sub}
           </div>
-          <div class="invoice-card-total" data-action="${_act}" data-id="${escapeHTML(inv.id)}" style="cursor:pointer;">${formatMoney(inv.total)}</div>
-          ${_selectionMode ? '' : `<div class="invoice-card-actions">
-            <button class="btn btn-sm ${inv.paid ? 'btn-success' : 'btn-pending'}" data-action="toggle-paid" data-id="${escapeHTML(inv.id)}" title="Clic para cambiar estado de pago">${inv.paid ? 'Pagado' : 'Pendiente'}</button>
-            <button class="btn btn-primary btn-sm" data-action="view-pdf" data-id="${escapeHTML(inv.id)}">Ver PDF</button>
+          <div class="invoice-card-total" data-action="edit" data-id="${id}" style="cursor:pointer;color:${positive ? '#2e7d32' : '#c62828'};">${positive ? '+' : '−'}${formatMoney(m.amount)}</div>
+          <div class="invoice-card-actions">
+            ${isLoan && !settled ? `<button class="btn btn-success btn-sm" data-action="repay" data-id="${id}">Devolver</button>` : ''}
             <div class="overflow-wrap">
-              <button class="btn btn-ghost btn-sm overflow-trigger" data-id="${escapeHTML(inv.id)}" title="Más acciones" aria-label="Más acciones de la factura ${inv.number}" aria-haspopup="true" style="padding:6px 10px;font-size:1.1rem;line-height:1;">⋮</button>
+              <button class="btn btn-ghost btn-sm overflow-trigger" data-id="${id}" title="Más acciones" aria-label="Más acciones" aria-haspopup="true" style="padding:6px 10px;font-size:1.1rem;line-height:1;">⋮</button>
             </div>
-          </div>`}
+          </div>
         </div>`;
     }
 
-    // Refresca SOLO la tarjeta de una factura (y el banner de totales), sin recrear el
-    // resto del historial. Solo es correcto cuando el cambio no puede alterar qué
-    // facturas se ven ni su orden — hoy se usa nada más para "marcar pagada/pendiente"
-    // sin un filtro de estado activo (ver el llamador). Con historiales largos, evita
-    // recomponer el backdrop-filter de todas las demás tarjetas por un cambio de una sola.
-    function _updateInvoiceCardInPlace(id) {
-      const inv = invoices.find(i => i.id === id);
-      const cardEl = document.querySelector(`.invoice-card[data-card-id="${CSS.escape(id)}"]`);
-      if (!inv || !cardEl) return false;
-      const wrap = document.createElement('div');
-      wrap.innerHTML = _invoiceCardHTML(inv, todayISO());
-      cardEl.replaceWith(wrap.firstElementChild);
-      _updateHistoryBannerStats();
-      return true;
-    }
-
-    function renderHistory() {
-      const el = document.getElementById('invoice-list');
-      const hasFilter = searchQuery || historyStatusFilter !== 'all' || historyYearFilter || historyClientFilter;
-      const displayInvoices = sortInvoicesForDisplay(hasFilter ? filteredInvoices : invoices);
-      updateFilterBadge();
-      _renderRecurringBanner();
-      _updateHistoryBannerStats();
-
-      // ── Empty state ─────────────────────────────────────────
-      if (displayInvoices.length === 0) {
-        const emptyIcon = `
-          <div class="empty-illustration" aria-hidden="true">
-            <svg viewBox="0 0 64 64" width="64" height="64" fill="none">
-              <rect x="14" y="8" width="36" height="48" rx="6" fill="rgba(255,255,255,.55)" stroke="var(--blue)" stroke-width="2"/>
-              <line x1="22" y1="22" x2="42" y2="22" stroke="var(--blue)" stroke-width="2" stroke-linecap="round"/>
-              <line x1="22" y1="32" x2="42" y2="32" stroke="var(--blue)" stroke-width="2" stroke-linecap="round" opacity=".6"/>
-              <line x1="22" y1="42" x2="34" y2="42" stroke="var(--blue)" stroke-width="2" stroke-linecap="round" opacity=".4"/>
-            </svg>
-          </div>`;
-        el.innerHTML = hasFilter
-          ? `<div class="empty-state">${emptyIcon}<p>No hay facturas con estos filtros.</p></div>`
-          : `<div class="empty-state">${emptyIcon}<p><strong>No hay facturas todavía.</strong><br>Crea tu primera factura con el botón <b>+ Nueva Factura</b>.</p></div>`;
-        return;
-      }
-
-      // ── Render with month separators ────────────────────────
-      // Los separadores de mes solo tienen sentido con orden cronológico (no al ordenar por monto).
-      const showMonthSeparators = historySortMode === 'number' || historySortMode === 'date';
-      const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-                      'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-      let lastMonthKey = null;
+    // Pinta una lista de movimientos (ya ordenada) en `el`, con separadores de mes.
+    function _renderMovementList(list, el, emptyHTML) {
+      if (list.length === 0) { el.innerHTML = `<div class="empty-state">${emptyHTML}</div>`; _animateListEntrance = false; return; }
+      const showMonthSeparators = historySortMode === 'date';
+      const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+      let lastMonthKey = null, idx = 0;
       const parts = [];
-      let _cardIdx = 0;  // Cascada de entrada: solo las primeras 7 tarjetas llevan delay,
-                         // el resto aparece junto (que filtrar/buscar no se sienta lento).
-      const _today = todayISO();   // fuera del bucle: antes se recalculaba por cada factura
-
-      for (const inv of displayInvoices) {
-        const d = new Date(inv.date + 'T12:00:00');
+      const today = todayISO();
+      for (const m of list) {
+        const d = new Date(m.date + 'T12:00:00');
         const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
         if (showMonthSeparators && monthKey !== lastMonthKey && !isNaN(d)) {
           lastMonthKey = monthKey;
           parts.push(`<div class="month-separator"${_animateListEntrance ? '' : ' style="animation:none;"'}>${MONTHS[d.getMonth()]} ${d.getFullYear()}</div>`);
         }
-        const _cardDelay = Math.min(_cardIdx++, 7) * 30;
-        parts.push(_invoiceCardHTML(inv, _today, { animate: _animateListEntrance, delay: _cardDelay }));
+        parts.push(_movementCardHTML(m, today, { animate: _animateListEntrance, delay: Math.min(idx++, 7) * 30 }));
       }
       el.innerHTML = parts.join('');
       _animateListEntrance = false;
     }
 
-    // Most recently deleted invoice — kept in memory for the undo button
-    let lastDeletedInvoice = null;
-    let lastDeletedNextNum = null;
-
-    async function confirmDelete(id, triggerEl) {
-      const inv = invoices.find(i => i.id === id);
-      if (!inv) return;
-      if (!(await _confirmDialog(`¿Eliminar Factura #${inv.number}?\n\nPodrás deshacer esta acción durante 10 segundos desde la notificación.`, { confirmLabel: 'Eliminar', danger: true }, triggerEl))) {
-        return;
-      }
-
-      // Save snapshot for undo BEFORE deleting
-      lastDeletedInvoice = JSON.parse(JSON.stringify(inv));
-      lastDeletedNextNum = nextNum;
-      takeSnapshot(`antes-de-borrar-#${inv.number}`);
-
-      deleteInvoiceById(id);
-      filterInvoices();
-
-      showToast(`Factura #${inv.number} eliminada`, 'info', {
-        actionLabel: 'Deshacer',
-        duration: 10000,
-        onAction: () => undoDelete()
-      });
-
-      // Clear the undo snapshot after the toast expires
-      setTimeout(() => {
-        if (lastDeletedInvoice && lastDeletedInvoice.id === inv.id) {
-          lastDeletedInvoice = null;
-          lastDeletedNextNum = null;
-        }
-      }, 10500);
+    function renderHistory() {
+      const el = document.getElementById('movement-list');
+      const hasFilter = _historyHasFilter();
+      const list = sortMovementsForDisplay(hasFilter ? filteredMovements : movements);
+      updateFilterBadge();
+      _updateHistoryBannerStats();
+      _renderMovementList(list, el, hasFilter
+        ? '<p>No hay movimientos con estos filtros.</p>'
+        : '<p><strong>No hay movimientos todavía.</strong><br>Registra el primero con el botón <b>+ Nuevo movimiento</b>.</p>');
     }
 
-    function undoDelete() {
-      if (!lastDeletedInvoice) {
-        showToast('Ya no se puede deshacer', 'error');
-        return;
-      }
-      const restored = lastDeletedInvoice;
-      invoices.unshift(restored);
-      // Keep newest-first order by sorting on number desc when ids/timestamps not reliable
-      invoices.sort((a, b) => (b.number || 0) - (a.number || 0));
+    // Repinta lo que esté en pantalla (la usan los listeners de la nube, deshacer, duplicar, etc.)
+    function _refreshCurrentView() {
+      const vis = id => document.getElementById(id)?.style.display === 'block';
+      if (vis('view-funds')) { if (_openFundId) renderFundPage(); else renderFunds(); }
+      if (vis('view-history')) filterMovements();
+      if (vis('view-dashboard')) renderDashboard();
+    }
 
-      if (!saveInvoices()) {
-        invoices = invoices.filter(i => i.id !== restored.id);
+    // ── Borrar con deshacer (10 s) ──
+    let lastDeleted = null;   // array de movimientos borrados (préstamo + sus devoluciones)
+    async function confirmDelete(id, triggerEl) {
+      const m = movements.find(x => x.id === id);
+      if (!m) return;
+      const nRepays = m.type === 'loan' ? movements.filter(x => x.type === 'repay' && x.loanId === id).length : 0;
+      const extra = nRepays ? `\n\nTambién se borran sus ${nRepays} devolución(es).` : '';
+      if (!(await _confirmDialog(`¿Eliminar este movimiento (${MOV_TYPES[m.type]} ${formatMoney(m.amount)})?${extra}\n\nPodrás deshacer durante 10 segundos desde la notificación.`, { confirmLabel: 'Eliminar', danger: true }, triggerEl))) return;
+      takeSnapshot('antes-de-borrar-movimiento');
+      lastDeleted = deleteMovementById(id);
+      _refreshCurrentView();
+      showToast('Movimiento eliminado', 'info', { actionLabel: 'Deshacer', duration: 10000, onAction: undoDelete });
+      setTimeout(() => { if (lastDeleted && lastDeleted[0]?.id === id) lastDeleted = null; }, 10500);
+    }
+    function undoDelete() {
+      if (!lastDeleted) { showToast('Ya no se puede deshacer', 'error'); return; }
+      const restored = lastDeleted; lastDeleted = null;
+      movements.push(...restored); _sortMovements();
+      if (!saveMovements()) {
+        const ids = restored.map(r => r.id);
+        movements = movements.filter(x => !ids.includes(x.id));
         showToast('No se pudo restaurar (almacenamiento lleno)', 'error');
         return;
       }
-      // Restore nextNum if it had advanced past this number
-      if (lastDeletedNextNum !== null && lastDeletedNextNum > nextNum) {
-        nextNum = lastDeletedNextNum;
-        saveNextNum();
-      }
-      // Re-subir a la nube: al borrar se eliminó de Firestore, hay que devolverla
-      _syncInvoice(restored);
-      _syncSettings();
-      lastDeletedInvoice = null;
-      lastDeletedNextNum = null;
-      filterInvoices();
-      showToast(`Factura #${restored.number} restaurada`, 'success');
+      restored.forEach(_syncMovement);
+      _refreshCurrentView();
+      showToast('Movimiento restaurado', 'success');
     }
 
+    // ── Filtros del historial ──
     let searchQuery = '';
-    let filteredInvoices = [];
-    let historyStatusFilter = 'all';   // 'all' | 'pending' | 'overdue' | 'paid'
-    let historyYearFilter = null;      // null = todas, o '2026', '2025', etc.
-    let historyClientFilter = null;    // null = todos, o el nombre exacto de un cliente
-    let historySortMode = 'number';    // 'number' | 'date' | 'amount-desc' | 'amount-asc'
+    let filteredMovements = [];
+    let historyTypeFilter = 'all';    // 'all' | 'in' | 'loan' | 'repay' | 'out' | 'overdue'
+    let historyYearFilter = null;
+    let historyFundFilter = null;     // id de fondo
+    let historySortMode = 'date';     // 'date' | 'amount-desc' | 'amount-asc'
 
-    // Modo selección de facturas: la funcionalidad se borró en la Tarea 2, pero
-    // _invoiceCardHTML() todavía LEE estas dos variables en cada tarjeta — quedan como
-    // inertes (siempre "no seleccionado") para que esa lectura no truene. Tarea 3
-    // reescribe renderHistory() por completo con el modelo de movimientos y esto deja
-    // de hacer falta.
+    // Modo selección de facturas (barra inferior "Com. o Des."): la funcionalidad de la
+    // vista de movimientos ya no la usa (Tarea 3 reescribió renderHistory() para movimientos,
+    // que no la lee), pero `_selectionMode`/`_selectedIds` siguen vivas para el código viejo
+    // de la barra de selección (toggleSelectionMenu/markSelectedPaid/deleteSelected, más abajo)
+    // — ese código quedó inalcanzable desde que se borró enterSelectionMode() en la Tarea 2,
+    // así que no hace falta tocarlo aquí (ver reporte de la Tarea 3).
     let _selectionMode = false;
     let _selectedIds = new Set();
 
     function setSortMode(mode) {
       historySortMode = mode;
-      document.querySelectorAll('#schip-number, #schip-date, #schip-amount-desc, #schip-amount-asc').forEach(b => {
-        if (b) b.className = 'filter-chip';
-      });
+      document.querySelectorAll('#schip-date, #schip-amount-desc, #schip-amount-asc').forEach(b => { b.className = 'filter-chip'; });
       const chip = document.getElementById('schip-' + mode);
       if (chip) chip.className = 'filter-chip active';
       renderHistory();
     }
-
-    // Devuelve una COPIA ordenada según historySortMode; nunca muta el array original
-    // (el orden de `invoices` es el que se persiste, no debe alterarse aquí).
-    function sortInvoicesForDisplay(list) {
-      const sorted = [...list];
-      if (historySortMode === 'date') {
-        sorted.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.number || 0) - (a.number || 0));
-      } else if (historySortMode === 'amount-desc') {
-        sorted.sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0));
-      } else if (historySortMode === 'amount-asc') {
-        sorted.sort((a, b) => (Number(a.total) || 0) - (Number(b.total) || 0));
-      } else {
-        sorted.sort((a, b) => (b.number || 0) - (a.number || 0));
-      }
-      return sorted;
+    // COPIA ordenada; nunca muta `movements` (su orden es el que se persiste).
+    function sortMovementsForDisplay(list) {
+      const s = [...list];
+      if (historySortMode === 'amount-desc') s.sort((a, b) => b.amount - a.amount);
+      else if (historySortMode === 'amount-asc') s.sort((a, b) => a.amount - b.amount);
+      else _sortMovements(s);
+      return s;
     }
-
-    function setStatusFilter(status) {
-      historyStatusFilter = status;
+    function setTypeFilter(t) {
+      historyTypeFilter = t;
       document.querySelectorAll('.status-chip').forEach(b => { b.className = 'filter-chip status-chip'; });
-      const chip = document.getElementById('fchip-' + status);
-      if (chip) chip.className = 'filter-chip status-chip ' +
-        (status === 'pending' || status === 'overdue' ? 'active-pending' : 'active');
-      filterInvoices();
+      const chip = document.getElementById('fchip-' + t);
+      if (chip) chip.className = 'filter-chip status-chip ' + (t === 'overdue' || t === 'loan' || t === 'out' ? 'active-pending' : 'active');
+      filterMovements();
     }
-
     function setYearFilter(year) {
       historyYearFilter = historyYearFilter === year ? null : year;
       document.querySelectorAll('.year-chip').forEach(b => {
         b.className = 'filter-chip year-chip' + (b.dataset.year === historyYearFilter ? ' active-year' : '');
       });
-      filterInvoices();
+      filterMovements();
     }
-
     function buildYearChips() {
-      const years = [...new Set(invoices.map(inv => (inv.date || '').slice(0, 4)).filter(Boolean))].sort((a, b) => b - a);
+      const years = [...new Set(movements.map(m => (m.date || '').slice(0, 4)).filter(Boolean))].sort((a, b) => b - a);
       const wrap = document.getElementById('year-chips');
       const row  = document.getElementById('year-filter-row');
       if (!wrap) return;
@@ -4446,29 +4351,24 @@
       ).join('');
       requestAnimationFrame(_updateFilterScrollHints);
     }
-
-    function setClientFilter(name) {
-      historyClientFilter = historyClientFilter === name ? null : name;
-      document.querySelectorAll('.client-chip').forEach(b => {
-        b.className = 'filter-chip client-chip' + (b.dataset.client === historyClientFilter ? ' active-year' : '');
+    function setFundFilter(id) {
+      historyFundFilter = historyFundFilter === id ? null : id;
+      document.querySelectorAll('.fund-chip').forEach(b => {
+        b.className = 'filter-chip fund-chip' + (b.dataset.fund === historyFundFilter ? ' active-year' : '');
       });
-      filterInvoices();
+      filterMovements();
     }
-
-    // Solo aparece si hay más de un cliente distinto entre las facturas guardadas
-    // (no confundir con `savedClients`, el directorio — esto lee inv.client.name de cada factura).
-    function buildClientChips() {
-      const names = [...new Set(invoices.map(inv => (inv.client?.name || '').trim()).filter(Boolean))]
-        .sort((a, b) => a.localeCompare(b));
-      const wrap = document.getElementById('client-chips');
-      const row  = document.getElementById('client-filter-row');
+    // Solo aparece si hay más de un fondo
+    function buildFundChips() {
+      const wrap = document.getElementById('fund-chips');
+      const row  = document.getElementById('fund-filter-row');
       if (!wrap) return;
-      if (names.length <= 1) { if (row) row.style.display = 'none'; historyClientFilter = null; return; }
+      if (funds.length <= 1) { if (row) row.style.display = 'none'; historyFundFilter = null; return; }
       if (row) row.style.display = '';
-      wrap.innerHTML = names.map(name =>
-        `<button class="filter-chip client-chip${historyClientFilter === name ? ' active-year' : ''}" data-client="${escapeHTML(name)}"
-          style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHTML(name)}"
-          onclick="setClientFilter(this.dataset.client)">${escapeHTML(name)}</button>`
+      wrap.innerHTML = funds.map(f =>
+        `<button class="filter-chip fund-chip${historyFundFilter === f.id ? ' active-year' : ''}" data-fund="${f.id}"
+          style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHTML(f.name)}"
+          onclick="setFundFilter(this.dataset.fund)">${escapeHTML(f.name)}</button>`
       ).join('');
       requestAnimationFrame(_updateFilterScrollHints);
     }
@@ -4504,58 +4404,39 @@
     function updateFilterBadge() {
       const badge = document.getElementById('filter-badge');
       if (!badge) return;
-      const active = historyStatusFilter !== 'all' || !!historyYearFilter || !!historyClientFilter || historySortMode !== 'number';
+      const active = historyTypeFilter !== 'all' || !!historyYearFilter || !!historyFundFilter || historySortMode !== 'date';
       badge.style.display = active ? 'block' : 'none';
     }
-
     // Al escribir en el buscador: espera una pausa breve antes de re-renderizar
     // todo el historial (antes se reconstruía el DOM completo en cada tecla).
     let _searchDebounce = null;
-    function debouncedFilterInvoices() {
+    function debouncedFilterMovements() {
       clearTimeout(_searchDebounce);
-      _searchDebounce = setTimeout(filterInvoices, 150);
+      _searchDebounce = setTimeout(filterMovements, 150);
     }
-
-    function filterInvoices() {
-      // Recalcula ANTES de filtrar — reflejan clientes/años que ya no existen (p.ej. si
-      // se borró la última factura de un cliente/año filtrado, esto resetea el filtro a
-      // null antes de armar la lista, y no queda un chip huérfano hasta cambiar de pestaña.
+    function filterMovements() {
+      // Recalcula ANTES de filtrar — si se borró el último movimiento de un año/fondo filtrado,
+      // el chip huérfano desaparece y su filtro se resetea solo.
       buildYearChips();
-      buildClientChips();
+      buildFundChips();
       searchQuery = document.getElementById('search-input')?.value.trim().toLowerCase() || '';
-      const _today = todayISO();
-
-      filteredInvoices = invoices.filter(inv => {
-        // Status filter
-        if (historyStatusFilter === 'paid'    && !inv.paid)  return false;
-        if (historyStatusFilter === 'pending' &&  inv.paid)  return false;
-        if (historyStatusFilter === 'overdue' && !(!inv.paid && inv.dueDate && inv.dueDate < _today)) return false;
-        // Year filter
-        if (historyYearFilter && (inv.date || '').slice(0, 4) !== historyYearFilter) return false;
-        // Client filter
-        if (historyClientFilter && (inv.client?.name || '').trim() !== historyClientFilter) return false;
-        // Text search — cliente, ciudad, # de factura, monto, descripción de items y notas
+      const today = todayISO();
+      filteredMovements = movements.filter(m => {
+        if (historyTypeFilter === 'overdue') { if (!isLoanOverdue(m, today)) return false; }
+        else if (historyTypeFilter !== 'all' && m.type !== historyTypeFilter) return false;
+        if (historyYearFilter && (m.date || '').slice(0, 4) !== historyYearFilter) return false;
+        if (historyFundFilter && m.fundId !== historyFundFilter) return false;
         if (searchQuery) {
-          const clientMatch = (inv.client?.name || '').toLowerCase().includes(searchQuery);
-          const cityMatch   = (inv.client?.city || '').toLowerCase().includes(searchQuery);
-          const numberMatch = String(inv.number).includes(searchQuery);
-          const amountMatch = String(inv.total ?? '').includes(searchQuery);
-          const itemMatch   = inv.items.some(item => (item.description || '').toLowerCase().includes(searchQuery));
-          const notesMatch  = (inv.notes || '').toLowerCase().includes(searchQuery);
-          if (!clientMatch && !cityMatch && !numberMatch && !amountMatch && !itemMatch && !notesMatch) return false;
+          const hay = [m.note, fundName(m.fundId), MOV_TYPES[m.type], String(m.amount)].join(' ').toLowerCase();
+          if (!hay.includes(searchQuery)) return false;
         }
         return true;
       });
-
       const resultsDiv = document.getElementById('search-results');
       if (resultsDiv) {
-        const total = filteredInvoices.length;
-        const hasFilter = searchQuery || historyStatusFilter !== 'all' || historyYearFilter || historyClientFilter;
-        resultsDiv.textContent = hasFilter
-          ? `${total} factura${total !== 1 ? 's' : ''} encontrada${total !== 1 ? 's' : ''}`
-          : '';
+        const n = filteredMovements.length;
+        resultsDiv.textContent = _historyHasFilter() ? `${n} movimiento${n !== 1 ? 's' : ''}` : '';
       }
-
       renderHistory();
     }
 
@@ -4825,9 +4706,9 @@
       }
       showView('history');
       buildYearChips();
-      buildClientChips();
+      buildFundChips();
       _animateListEntrance = true;
-      filterInvoices();
+      filterMovements();
       setTimeout(positionBnLens, 50);
       updateNewsDot();
       setTimeout(() => showChangelog(), 900);
@@ -4914,11 +4795,11 @@
         if (settingsView) settingsView.style.display = 'none';
         clearDraft();
         buildYearChips();
-        buildClientChips();
+        buildFundChips();
         // Sin animación de entrada por tarjeta acá: esta vista ya viene con su propio
         // deslizamiento (ver el bloque de tab-slide más abajo) — animar las tarjetas
         // A LA VEZ se veía como que la lista parpadeaba en vez de un solo movimiento.
-        filterInvoices();
+        filterMovements();
       } else if (tab === 'dashboard') {
         createView.style.display = 'none';
         historyView.style.display = 'none';
@@ -8960,22 +8841,17 @@
       if (isOpen) return;
 
       menu.dataset.openId = id;
-      const isMobile = window.innerWidth <= 480;
-      const inv = invoices.find(i => i.id === id);
-      const pending = !!(inv && !inv.paid);
       // El min-width vive en el div interno, no en el elemento que se anima:
       // `.overflow-dropdown` declara min-width:160px, y eso le ganaba al width
       // del botón (32px), así que el ancho nunca animaba y la burbuja arrancaba
       // como una cápsula chata de 160×31 en vez de un círculo. Igual que en
       // Fit-F/Fit-M, donde el min-width está en el `inner`.
+      const m = movements.find(x => x.id === id);
+      const canRepay = !!(m && m.type === 'loan' && !isLoanSettled(m));
       menu.innerHTML = '<div class="card-menu-inner" style="min-width:160px;opacity:0;transition:opacity .12s ease .1s;">' +
         `<button class="dropdown-item" data-action="edit" data-id="${id}">Editar</button>` +
+        (canRepay ? `<button class="dropdown-item" data-action="repay" data-id="${id}">Devolver</button>` : '') +
         `<button class="dropdown-item" data-action="duplicate" data-id="${id}">Duplicar</button>` +
-        (isMobile ? `<button class="dropdown-item" data-action="view-pdf" data-id="${id}">Ver PDF</button>` : '') +
-        (inv && !inv.paid
-          ? `<button class="dropdown-item" onclick="openPaymentModal('${id}', document.getElementById('global-card-menu')._btn);closeAllDropdowns();">Registrar abono</button>`
-          : '') +
-        (pending ? `<button class="dropdown-item" onclick="closeAllDropdowns();sendPaymentReminder('${id}')">Enviar recordatorio</button>` : '') +
         `<div class="dropdown-divider"></div>` +
         `<button class="dropdown-item danger" data-action="delete" data-id="${id}">Eliminar</button>` +
         '</div>';
@@ -9395,47 +9271,22 @@
       const action = btn.dataset.action;
       const id = btn.dataset.id;
 
-      if (action === 'toggle-select') {
-        toggleSelectInvoice(id);
-      } else if (action === 'preview') {
-        // Toda la tarjeta (no solo el div de texto que recibió el clic) — así el
-        // genie cubre la tarjeta entera, con su propio radio redondeado.
-        openInvoicePreview(id, btn.closest('.invoice-card') || btn);
-      } else if (action === 'edit') {
-        // editInvoice() se borró en la Tarea 2 — parche mínimo hasta que la Tarea 3/4
-        // borren esta ruta de raíz (ver editPreviewInvoice más arriba).
-        showToast('Edición de facturas ya no disponible', 'info');
+      const cardOf = () => document.querySelector(`.invoice-card[data-card-id="${CSS.escape(id)}"]`) || btn;
+      if (action === 'edit') {
+        // Abre DESDE la tarjeta (no desde el item del menú) — es el punto al que vuelve al cerrar.
+        editMovement(id, cardOf());
         closeAllDropdowns();
-      } else if (action === 'view-pdf') {
+      } else if (action === 'repay') {
+        openRepayFor(id, cardOf());
         closeAllDropdowns();
-        // Móvil: vista previa HTML completa (con botón "PDF" para el archivo real).
-        // Escritorio: visor de PDF en iframe directamente.
-        if (_isMobileDevice()) openInvoicePreview(id, btn); else viewPDF(id, btn);
       } else if (action === 'delete') {
-        // Nace y se encoge en el botón ⋮ que abrió el menú (no en "Eliminar" del propio
-        // menú, que se está cerrando/encogiendo al mismo tiempo). Foto ANTES de
-        // closeAllDropdowns(), que limpia la referencia al botón cuando termina de cerrar.
-        const src = _snapTrigger(document.getElementById('global-card-menu')._btn);
+        // Foto del botón ⋮ ANTES de closeAllDropdowns(), que limpia la referencia al terminar.
+        const src = _snapTrigger(document.getElementById('global-card-menu')._btn) || btn;
         closeAllDropdowns();
         confirmDelete(id, src);
       } else if (action === 'duplicate') {
         closeAllDropdowns();
-        duplicateInvoice(id);
-      } else if (action === 'toggle-paid') {
-        const inv = invoices.find(i => i.id === id);
-        if (inv) {
-          inv.paid = !inv.paid;
-          inv.paidDate = inv.paid ? todayISO() : '';
-          saveAndSyncInvoice(inv);
-          // Con un filtro de estado activo (pagadas/pendientes/vencidas), cambiar el
-          // estado puede sacar o meter esta tarjeta de la vista — ahí sí hace falta
-          // recalcular la lista entera. Sin filtro de estado, alcanza con actualizar
-          // esta tarjeta sola (más rápido con historiales largos: no recompone el
-          // backdrop-filter de las demás).
-          if (historyStatusFilter === 'all') _updateInvoiceCardInPlace(id);
-          else filterInvoices();
-          showToast(inv.paid ? 'Marcado como pagado' : 'Marcado como pendiente', 'info');
-        }
+        duplicateMovement(id);
       }
     });
 
@@ -9459,7 +9310,7 @@
       // Sale de una si no hay ningún menú abierto — evita 5 closest() en CADA
       // toque de pantalla (el caso normal, casi siempre) para nada.
       if (!_anyMenuOpen()) return;
-      if (e.target.closest('#global-card-menu') || e.target.closest('#dash-actions-menu') || e.target.closest('#selection-actions-menu') || e.target.closest('.overflow-wrap') || e.target.closest('.dash-menu-trigger')) return;
+      if (e.target.closest('#global-card-menu') || e.target.closest('#dash-actions-menu') || e.target.closest('.overflow-wrap') || e.target.closest('.dash-menu-trigger')) return;
       closeAllDropdowns();
     }, { capture: true, passive: true });
 
@@ -9495,43 +9346,12 @@
     // (Long-press → modo selección se borró entero en la Tarea 2: apuntaba a
     // enterSelectionMode(), que ya no existe. Tarea 3 no lo necesita.)
 
-    // ── Cross-Tab Synchronization ──
+    // ── Sincronización entre pestañas del mismo navegador ──
     window.addEventListener('storage', (e) => {
-      // When localStorage changes in another tab, reload the affected data
-      if (e.key === 'bank_invoices') {
+      if (e.key === 'bank_movements' || e.key === 'bank_funds' || e.key === 'bank_profile') {
         loadData();
-        filterInvoices();  // respeta búsqueda/filtros activos (filterInvoices ya llama a renderHistory)
-        // Refresh dashboard if visible
-        if (document.getElementById('view-dashboard').style.display === 'block') {
-          renderDashboard();
-        }
-      } else if (e.key === 'bank_client') {
-        loadData();
-        if (document.getElementById('view-create').style.display === 'block') {
-          renderCreateForm();
-        }
-      } else if (e.key === 'bank_issuer') {
-        loadData();
-        if (document.getElementById('view-create').style.display === 'block') {
-          renderCreateForm();
-        }
-      } else if (e.key === 'bank_logo') {
-        loadData();
-        if (document.getElementById('view-create').style.display === 'block') {
-          renderCreateForm();
-        }
-      } else if (e.key === 'bank_templates') {
-        loadData();
-        if (document.getElementById('view-create').style.display === 'block') {
-          renderTemplatesPanel();
-        }
-      } else if (e.key === 'bank_expenses') {
-        loadData();
-        if (document.getElementById('view-dashboard').style.display === 'block') {
-          renderDashboard();
-        }
-      } else if (e.key === 'bank_saved_clients') {
-        loadData();
+        _refreshCurrentView();
+        if (document.getElementById('view-create').style.display === 'block') renderCreateForm();
       }
     });
 
@@ -9686,7 +9506,7 @@
       _syncSettings();
 
       closeCopiasPage();
-      filterInvoices();
+      filterMovements();
       showToast(`Copia restaurada: ${invoices.length} factura(s)`, 'success');
     }
 
@@ -9790,7 +9610,7 @@
           _syncSettings();
 
           document.getElementById('modal-import').classList.remove('open');
-          filterInvoices();
+          filterMovements();
           updateRestoreMenuVisibility();
           showToast(`Backup importado: ${invoices.length} factura(s). Tu copia anterior se descargó por seguridad.`, 'success');
         } catch (err) {
@@ -9861,7 +9681,7 @@
         localStorage.removeItem('bank_pre_import_date');
       } catch {}
 
-      filterInvoices();
+      filterMovements();
       updateRestoreMenuVisibility();
       showToast(`Copia automática restaurada: ${invoices.length} factura(s)`, 'success');
     }
