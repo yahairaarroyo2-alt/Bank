@@ -1,4 +1,4 @@
-const CACHE = 'bank-v7';
+const CACHE = 'bank-v8';
 // Caché aparte para los CDN externos (jsPDF, Google Fonts) que la app necesita
 // para generar PDFs offline — se guarda con su propio nombre para no mezclarse
 // con el caché de la app (que se borra completo en cada actualización).

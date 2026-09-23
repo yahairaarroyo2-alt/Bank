@@ -130,7 +130,7 @@
     /* Ronda anterior: regla que anulaba el blur de botones/inputs ANIDADOS dentro de
        una tarjeta/modal/panel que ya tenía el suyo. Esta ronda va más lejos y le quita
        el blur DIRECTAMENTE a cada superficie que no sea un overlay flotante (ver
-       "Blur solo donde se ve" más abajo, y cada regla .invoice-card/.dashboard-card/
+       "Blur solo donde se ve" más abajo, y cada regla .mov-card/.dashboard-card/
        .settings-section/etc. ya sin backdrop-filter) — así que ya no queda nada que
        anular acá; la regla se borró entera.
     */
@@ -141,12 +141,12 @@
 
     .history-actions { margin-bottom: 20px; }
 
-    .invoice-card {
+    .mov-card {
       background: var(--lg-card);
       /* Sin backdrop-filter a propósito (antes blur(14px), ya más liviano que el resto
          por ser lo que más se repite en el historial): comparado en pantalla contra el
          mismo fondo, blureado o no, es indistinguible — el fondo detrás es un degradado
-         liso, no hay detalle que desenfocar. Esta tarjeta se repite por cada factura del
+         liso, no hay detalle que desenfocar. Esta tarjeta se repite por cada movimiento del
          historial y recomponía su blur en cada frame de scroll: el mayor costo de
          batería/fluidez medido en la app entera. */
       border: var(--lg-border);
@@ -170,24 +170,15 @@
       -webkit-user-select: none;
       user-select: none;
     }
-    .invoice-card.selecting { cursor: pointer; }
-    .invoice-card.selected { border-color: var(--blue); box-shadow: var(--lg-shadow), 0 0 0 2px var(--blue); }
-    .sel-check {
-      flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%;
-      border: 2px solid var(--muted); display: flex; align-items: center; justify-content: center;
-      font-size: 0.85rem; font-weight: 700; color: #fff; transition: background .15s, border-color .15s;
-    }
-    .sel-check.on { background: var(--blue); border-color: var(--blue); }
-    body.night .sel-check.on { color: #000; }
-    .invoice-card-info { flex: 1; min-width: 200px; }
-    .invoice-card-num { font-size: 1.1rem; font-weight: 700; color: var(--text); }
-    .invoice-card-client { color: var(--text-light); font-size: 0.9rem; margin: 2px 0; }
-    .invoice-card-date { color: var(--text-light); font-size: 0.85rem; }
-    .invoice-card-total { font-size: 1.2rem; font-weight: 700; color: var(--text); }
-    .invoice-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .mov-card-info { flex: 1; min-width: 200px; }
+    .mov-card-num { font-size: 1.1rem; font-weight: 700; color: var(--text); }
+    .mov-card-client { color: var(--text-light); font-size: 0.9rem; margin: 2px 0; }
+    .mov-card-date { color: var(--text-light); font-size: 0.85rem; }
+    .mov-card-total { font-size: 1.2rem; font-weight: 700; color: var(--text); }
+    .mov-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     /* Móvil: grid — info izquierda, monto+botones derecha (igual que desktop) */
     @media (max-width: 480px) {
-      .invoice-card {
+      .mov-card {
         padding: 12px 14px;
         display: grid;
         grid-template-columns: 1fr auto;
@@ -195,12 +186,12 @@
         gap: 0 10px;
         align-items: center;
       }
-      .invoice-card-info { grid-column: 1; grid-row: 1 / 3; min-width: 0; overflow: hidden; }
-      .invoice-card-num { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1rem; }
-      .invoice-card-total { grid-column: 2; grid-row: 1; font-size: 1rem; white-space: nowrap; text-align: right; }
-      .invoice-card-actions { grid-column: 2; grid-row: 2; justify-content: flex-end; flex-wrap: nowrap; margin-top: 4px; }
-      .invoice-card-actions .btn-sm { padding: 5px 9px; font-size: 0.8rem; }
-      .invoice-card-actions [data-action="view-pdf"] { display: none; }
+      .mov-card-info { grid-column: 1; grid-row: 1 / 3; min-width: 0; overflow: hidden; }
+      .mov-card-num { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1rem; }
+      .mov-card-total { grid-column: 2; grid-row: 1; font-size: 1rem; white-space: nowrap; text-align: right; }
+      .mov-card-actions { grid-column: 2; grid-row: 2; justify-content: flex-end; flex-wrap: nowrap; margin-top: 4px; }
+      .mov-card-actions .btn-sm { padding: 5px 9px; font-size: 0.8rem; }
+      .mov-card-actions [data-action="view-pdf"] { display: none; }
     }
 
     .empty-state {
@@ -223,7 +214,7 @@
     .create-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
     /* Invoice paper */
-    /* La factura conserva su azul original (no se neutraliza con el resto de la app) */
+    /* El PDF/papel conserva su azul original (no se neutraliza con el resto de la app) */
     .invoice-paper {
       --blue: #5b8fa8;
       --blue-light: #e8f0f5;
@@ -297,9 +288,6 @@
     tbody td:nth-child(3), tbody td:nth-child(4) { text-align: right; white-space: nowrap; }
     tbody td:last-child { white-space: nowrap; }
 
-    .td-qty { width: 60px; }
-    .td-price { width: 100px; }
-    .td-total { width: 100px; }
     tbody td:nth-child(3) { width: 150px; }  /* Fecha column */
 
     td input {
@@ -318,17 +306,6 @@
       background: white;
     }
     .input-right { text-align: right; }
-
-    .btn-del-row {
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: #c62828;
-      font-size: 1rem;
-      padding: 4px;
-      line-height: 1;
-    }
-    .btn-del-row:hover { opacity: .7; }
 
     .add-row-wrap { margin-bottom: 20px; }
 
@@ -388,8 +365,7 @@
       box-shadow: var(--lg-shadow), 0 16px 48px rgba(0,0,0,.18);
       scrollbar-width: none;
     }
-    .modal::-webkit-scrollbar, #preview-content::-webkit-scrollbar { display: none; }
-    #preview-content { scrollbar-width: none; }
+    .modal::-webkit-scrollbar { display: none; }
     .modal h2 { margin: 0 0 20px; font-size: 1.1rem; color: var(--blue); }
     .modal label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; color: var(--text-light); }
     .modal input, .modal select {
@@ -410,21 +386,6 @@
     .modal-header h3 { margin: 0; font-size: 1.1rem; color: var(--text); }
     .modal-header .btn { flex-shrink: 0; }
 
-    /* Selector de formato del PDF del dashboard (tarjetas con miniatura) */
-    .dash-fmt-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; }
-    .dash-fmt-card {
-      display: flex; flex-direction: column; gap: 6px; min-width: 0;
-      background: rgba(255,255,255,.4); border: 1.5px solid rgba(0,0,0,.08);
-      border-radius: 14px; padding: 10px; cursor: pointer; font-family: inherit;
-      transition: border-color .15s, transform .1s, background .15s;
-    }
-    .dash-fmt-thumb svg { display: block; width: 100%; height: 100%; }
-    .dash-fmt-card:hover { border-color: var(--blue); background: rgba(255,255,255,.62); }
-    .dash-fmt-card:active { transform: scale(.97); }
-    .dash-fmt-thumb { aspect-ratio: 120 / 90; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-    .dash-fmt-title { font-weight: 700; font-size: 0.9rem; color: var(--text); text-align: center; }
-    .dash-fmt-sub { font-size: 0.72rem; color: var(--text-light); text-align: center; }
-
     /* Responsive */
     @media (max-width: 600px) {
       .invoice-paper { padding: 20px 16px; }
@@ -444,51 +405,13 @@
       .create-header { flex-wrap: nowrap; gap: 6px; margin-bottom: 12px; }
       .create-actions { display: flex; gap: 5px; flex-shrink: 0; }
       .create-actions .btn { font-size: 0.76rem; padding: 6px 9px; }
-      #tpl-indicator { font-size: 0.7rem; padding: 4px 8px; flex-shrink: 1; }
       .create-header > [aria-label="Volver"] { font-size: 0.95rem !important; padding: 5px 9px !important; flex-shrink: 0; }
       /* Tabla de items — cabe sin scroll en pantalla de 375px */
       table { font-size: 0.76rem; }
       thead th { padding: 7px 5px; white-space: nowrap; }
       tbody td { padding: 6px 5px; }
-      .td-qty { width: 34px; }
-      .td-price { width: 64px; }
-      .td-total { width: 64px; }
       tbody td:nth-child(3) { width: 80px; }  /* Fecha */
       td input { font-size: 0.76rem; padding: 3px 4px; }
-      /* Móvil: cada ítem como tarjeta apilada (se ve todo, incl. la fecha completa) —
-         aplica al formulario Y a la vista previa de solo lectura (#preview-content). */
-      #invoice-form .table-section .table-wrap,
-      #preview-content .table-section .table-wrap { overflow: visible; }
-      #invoice-form .table-section thead,
-      #preview-content .table-section thead { display: none; }
-      #invoice-form .table-section table, #invoice-form .table-section tbody, #invoice-form .table-section tr,
-      #preview-content .table-section table, #preview-content .table-section tbody, #preview-content .table-section tr { display: block; width: 100%; }
-      #invoice-form .table-section tbody tr,
-      #preview-content .table-section tbody tr {
-        background: rgba(255,255,255,.5);
-        border: 1px solid rgba(0,0,0,.07);
-        border-radius: 12px; padding: 4px 10px; margin-bottom: 10px;
-      }
-      #invoice-form .table-section tbody td,
-      #preview-content .table-section tbody td {
-        display: flex !important; align-items: center; justify-content: space-between;
-        gap: 10px; width: auto; padding: 6px 0 !important; border: none; text-align: right;
-        font-size: 0.85rem;
-      }
-      #invoice-form .table-section tbody td::before,
-      #preview-content .table-section tbody td::before {
-        content: attr(data-label);
-        flex: 0 0 88px; text-align: left;
-        font-size: 0.68rem; font-weight: 700; text-transform: uppercase; color: var(--text-light);
-      }
-      #invoice-form .table-section tbody td input { flex: 1; width: auto; text-align: right; font-size: 0.9rem; padding: 5px 6px; }
-      #invoice-form .table-section tbody td.td-desc input { text-align: left; }
-      #invoice-form .table-section tbody td.td-date > div { flex: 1; }
-      #invoice-form .table-section tbody td.td-total,
-      #preview-content .table-section tbody td.td-total { font-weight: 700; }
-      #invoice-form .table-section tbody td.td-actions { justify-content: flex-end; }
-      #invoice-form .table-section tbody td.td-actions::before { content: ''; flex: 0; }
-      #preview-content .table-section tbody td.td-desc { text-align: left; }
       /* Totals */
       .totals-table { font-size: 0.82rem; min-width: 0; width: 100%; }
       .inv-totals { justify-content: stretch; }
@@ -498,19 +421,10 @@
       .inv-to-content { font-size: 0.82rem; }
       /* Glass (tpl4) — header sin wrap + tabla con scroll */
       .invoice-paper[data-tpl="4"] .inv-top { flex-wrap: nowrap; gap: 8px; }
-      .t4-logo-issuer { min-width: 0; flex-shrink: 1; overflow: hidden; }
-      .t4-issuer-inline { overflow: hidden; }
-      .t4-issuer-inline strong { font-size: 0.8rem; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .t4-issuer-inline .t4-issuer-sub { font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .t4-header-right { flex-shrink: 0; }
-      .t4-num { font-size: 1.4rem; }
       .invoice-paper[data-tpl="4"] .table-wrap { overflow-x: auto; overflow-y: hidden; }
       .invoice-paper[data-tpl="4"] thead th { padding: 7px 6px; }
       .invoice-paper[data-tpl="4"] tbody td  { padding: 7px 6px; }
       .invoice-paper[data-tpl="4"] .totals-table td { padding: 7px 8px; }
-      /* "Descargar" se mueve al menú ⋮ en celular — menos apretado que un botón más en la barra */
-      #selection-download-btn { display: none; }
-      #selection-actions-menu #selection-download-menu-item { display: block; }
     }
 
     /* ── Toast Notifications ── */
@@ -644,8 +558,7 @@
     /* Fit-M: resorte hacia abajo — se despliega desde arriba con un rebote al final */
     @keyframes uiSpringDown { from { opacity:0; transform:translateY(-10px) scale(.97); } to { opacity:1; transform:translateY(0) scale(1); } }
     .filter-panel { animation: uiSpringDown .4s cubic-bezier(.34,1.56,.64,1); transform-origin: top center; }
-    #cal-popup { animation: uiMenuIn .16s ease-out; }
-    .invoice-card { animation: uiCardIn .25s ease-out backwards; }
+    .mov-card { animation: uiCardIn .25s ease-out backwards; }
     .dashboard-grid .dashboard-card { animation: uiCardIn .3s ease-out backwards; }
     /* Se apaga cuando el deslizamiento entre pestañas ya está animando toda la vista —
        las tarjetas repitiendo su propia entrada AL MISMO TIEMPO se veía como que
@@ -659,22 +572,14 @@
     .settings-page .settings-section { animation: uiCardIn .25s ease-out backwards; }
     /* Ajustes siempre entra por deslizamiento de pestaña (nunca de otra forma), así que
        sus secciones no necesitan repetir su propia entrada encima — mismo motivo que
-       Dashboard/Facturación. */
+       Fondos/Movimientos/Resumen. */
     .settings-page.no-entrance-anim .settings-section { animation: none !important; }
     .settings-page .settings-section:nth-of-type(2) { animation-delay: .04s; }
     .settings-page .settings-section:nth-of-type(3) { animation-delay: .08s; }
     .settings-page .settings-section:nth-of-type(n+4) { animation-delay: .12s; }
-    /* Barra de selección: sube desde abajo en vez de aparecer de golpe.
-       El translate(-50%) del último frame iguala el transform inline, así que al
-       terminar la animación no hay salto. */
-    @keyframes uiBarUp { from { opacity: 0; transform: translate(-50%, 26px); } to { opacity: 1; transform: translate(-50%, 0); } }
     /* Las barras de progreso llegaban ya dibujadas a su ancho final (el `transition:width`
        nunca se disparaba porque el ancho se pinta directo en el HTML). */
     @keyframes uiGrowX { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-    #selection-bar { animation: uiBarUp .28s cubic-bezier(.32,.72,.36,1); }
-    /* "Descargar" del menú ⋮ solo se usa en celular (ver media query) — en escritorio
-       el botón grande de la barra ya cumple esa función. */
-    #selection-download-menu-item { display: none; }
 
     /* ── Micro-interacciones (adaptadas de Fit-M) ── */
     /* Rebote elástico al soltar el clic en botones importantes — se dispara vía JS
@@ -701,15 +606,15 @@
     @keyframes uiDominoIn { from{opacity:0;transform:translateY(10px) scale(.97)} to{opacity:1;transform:translateY(0) scale(1)} }
     .list-animate > * { animation: uiDominoIn .35s cubic-bezier(.22,1,.36,1) both; animation-delay: calc(var(--i, 0) * 60ms); }
 
-    /* Fit-M: slide direccional al cambiar entre pestañas Facturación‹›Dashboard‹›Ajustes */
+    /* Fit-M: slide direccional al cambiar entre pestañas Fondos‹›Movimientos‹›Resumen‹›Ajustes */
     @keyframes uiTabSlideFromRight { from{opacity:0;transform:translateX(36px)} to{opacity:1;transform:translateX(0)} }
     @keyframes uiTabSlideFromLeft  { from{opacity:0;transform:translateX(-36px)} to{opacity:1;transform:translateX(0)} }
     .tab-slide-right { animation: uiTabSlideFromRight .5s cubic-bezier(.22,1,.36,1); }
     .tab-slide-left  { animation: uiTabSlideFromLeft .5s cubic-bezier(.22,1,.36,1); }
 
-    /* Fit-M: crecer/encoger desde el punto que tocaste — vista previa de factura.
-       !important porque debe ganarle a la animación normal de .modal-overlay.open .modal
-       mientras corre. */
+    /* Fit-M: crecer/encoger desde el punto que tocaste — modales y vistas (fondo,
+       movimiento, confirmaciones, visor de PDF). !important porque debe ganarle a la
+       animación normal de .modal-overlay.open .modal mientras corre. */
     /* Antes border-radius también animaba (999px del botón de origen → 56px a mitad de
        camino → 22px final) para que el bulto naciera con la forma real de lo tocado.
        Visualmente lindo, pero era la ÚNICA propiedad no-compositor de esta animación:
@@ -739,22 +644,22 @@
     .pp-bar, .items-bar > span { transform-origin: left center; animation: uiGrowX .55s cubic-bezier(.22,1,.36,1); }
     .month-separator, .history-banner { animation: uiCardIn .25s ease-out backwards; }
     /* Respuesta al tocar una tarjeta (antes solo los botones tenían feedback) */
-    .invoice-card { transition: transform .12s ease, border-color .15s, box-shadow .15s; }
-    .invoice-card:active { transform: scale(.985); }
+    .mov-card { transition: transform .12s ease, border-color .15s, box-shadow .15s; }
+    .mov-card:active { transform: scale(.985); }
     .settings-row:active { transform: scale(.995); }
-    .metric-box, .mini-card, .pp-box { transition: transform .15s ease; }
+    .metric-box, .pp-box { transition: transform .15s ease; }
     @media (hover: hover) {
-      .metric-box:hover, .mini-card:hover, .pp-box:hover { transform: translateY(-2px); }
+      .metric-box:hover, .pp-box:hover { transform: translateY(-2px); }
     }
     @media (prefers-reduced-motion: reduce) {
       .modal-overlay.open, .modal-overlay.open .modal, .overflow-dropdown, .filter-panel,
-      #cal-popup, .invoice-card, .dashboard-grid .dashboard-card, #selection-bar,
+      .mov-card, .dashboard-grid .dashboard-card,
       .pp-bar, .items-bar > span, .month-separator, .history-banner,
       .settings-page .settings-section, .badge-overdue, .badge-pulse, .cl-new,
       .list-animate > *, .tab-slide-right, .tab-slide-left,
       .grow-in-point, .shrink-out-point, .overlay-grow-in, .overlay-shrink-out,
       .btn-bounce, .ui-ripple { animation: none !important; }
-      .invoice-card, .settings-row, .metric-box, .mini-card, .pp-box { transition: none !important; transform: none !important; }
+      .mov-card, .settings-row, .metric-box, .pp-box { transition: none !important; transform: none !important; }
     }
 
     /* Ajustes → Apariencia → "Menos efectos": misma bandera manual que prefers-reduced-
@@ -768,13 +673,13 @@
        ningún JS espera a que un blur "termine". */
     body.lite * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
     body.lite .modal-overlay.open, body.lite .modal-overlay.open .modal, body.lite .overflow-dropdown, body.lite .filter-panel,
-    body.lite #cal-popup, body.lite .invoice-card, body.lite .dashboard-grid .dashboard-card, body.lite #selection-bar,
+    body.lite .mov-card, body.lite .dashboard-grid .dashboard-card,
     body.lite .pp-bar, body.lite .items-bar > span, body.lite .month-separator, body.lite .history-banner,
     body.lite .settings-page .settings-section, body.lite .badge-overdue, body.lite .badge-pulse, body.lite .cl-new,
     body.lite .list-animate > *, body.lite .tab-slide-right, body.lite .tab-slide-left,
     body.lite .grow-in-point, body.lite .shrink-out-point, body.lite .overlay-grow-in, body.lite .overlay-shrink-out,
     body.lite .btn-bounce, body.lite .ui-ripple { animation: none !important; }
-    body.lite .invoice-card, body.lite .settings-row, body.lite .metric-box, body.lite .mini-card, body.lite .pp-box { transition: none !important; transform: none !important; }
+    body.lite .mov-card, body.lite .settings-row, body.lite .metric-box, body.lite .pp-box { transition: none !important; transform: none !important; }
 
     /* ── Dashboard View ── */
     #view-dashboard { display: none; }
@@ -817,17 +722,6 @@
       letter-spacing: 0.06em; text-transform: uppercase;
       padding: 0 6px 6px; margin-top: 4px;
     }
-    .tpl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
-    .tpl-card {
-      cursor: pointer; border-radius: 12px; overflow: hidden;
-      border: 2px solid transparent; transition: border-color .15s, transform .1s;
-      background: var(--lg-card);
-      box-shadow: var(--lg-shadow);
-    }
-    .tpl-card.tpl-selected { border-color: var(--blue); }
-    .tpl-card:active { transform: scale(.97); }
-    .tpl-thumb { pointer-events: none; overflow: hidden; }
-    .tpl-name { font-size: .8rem; font-weight: 600; text-align: center; padding: 7px 4px 9px; color: var(--text); }
     .sw-track { width:42px; height:24px; border-radius:12px; background:#c7c7cc; position:relative; display:inline-block; transition:background .2s; flex-shrink:0; pointer-events:none; }
     .sw-track.on { background:#34c759; }
     .sw-track::after { content:''; position:absolute; width:20px; height:20px; border-radius:50%; background:#fff; top:2px; left:2px; transition:left .2s; box-shadow:0 1px 3px rgba(0,0,0,.3); }
@@ -1008,20 +902,6 @@
     .banner-pending .val { color: #c0540a; }
     .banner-paid .val { color: #2e7d32; }
     body.night .banner-paid .val { color: #7ddc84; }
-    .recurring-banner-row {
-      display: flex; align-items: center; gap: 10px;
-      background: var(--lg-card);
-      border: var(--lg-border);
-      box-shadow: var(--lg-shadow);
-      border-radius: 14px;
-      padding: 10px 14px;
-      margin-bottom: 8px;
-      font-size: 0.86rem;
-      color: var(--text);
-      cursor: pointer;
-      transition: transform .1s;
-    }
-    .recurring-banner-row:active { transform: scale(.98); }
     /* Cartel de Novedades — mismo look que el cartel de Fit-M: tarjeta clara fija
        (no sigue el tema oscuro de la app, a propósito, igual que Fit-M) con entrada
        tipo resorte. Colores a propósito fijos (no var(--text)), no rgba(255,255,255,...)
@@ -1059,7 +939,7 @@
     /* ── Página "Novedades" (Ajustes) — igual patrón que Fit-M: NO es un modal que
        crece de un botón, es una sub-vista que reemplaza el contenido de Ajustes y
        se desliza como cualquier pestaña (mismas clases .tab-slide-right/-left que
-       switchTab usa entre Facturación‹›Dashboard‹›Ajustes). El aviso automático al
+       switchTab usa entre Fondos‹›Movimientos‹›Resumen‹›Ajustes). El aviso automático al
        abrir la app sigue usando el cartel chico de arriba (#modal-changelog). */
     #novedades-page { display: none; }
     /* .cl-section-title/.cl-section-desc/.cl-new son de siempre #666/#444/#111 fijos
@@ -1178,16 +1058,6 @@
     .pp-bar-wrap { height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; margin-top: 8px; }
     .pp-bar { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #4caf50, #66bb6a); transition: width 0.4s; }
 
-    .mini-card {
-      background: var(--lg-card);
-      border: var(--lg-border);
-      border-left: 3px solid var(--blue);
-      box-shadow: var(--lg-shadow);
-      border-radius: 16px;
-      padding: 10px 14px;
-    }
-    /* Fila de lista (gastos, clientes guardados) — reemplaza el fondo blanco fijo
-       que quedaba claro incluso en modo oscuro. */
     .list-item-card {
       display: flex;
       align-items: center;
@@ -1198,36 +1068,6 @@
       border: 1px solid rgba(0,0,0,.06);
     }
     body.night .list-item-card { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.1); }
-    .mini-card-label {
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: var(--text-light);
-      margin-bottom: 4px;
-    }
-    .mini-card-value {
-      font-size: 1.1rem;
-      font-weight: 700;
-      color: var(--text);
-    }
-    .mini-card-meta {
-      font-size: 0.8rem;
-      color: var(--text-light);
-      margin-top: 2px;
-    }
-
-    .items-analysis-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-    }
-    @media (max-width: 720px) {
-      .items-analysis-grid {
-        grid-template-columns: 1fr;
-        gap: 24px;
-      }
-    }
-
     .items-table .bar-cell {
       width: 90px;
       padding-left: 0;
@@ -1277,7 +1117,7 @@
       .dashboard-card h3 { margin: 0 0 10px !important; font-size: 0.98rem !important; }
       .dashboard-card h4 { margin: 0 0 6px !important; }
       .metrics-row { gap: 10px !important; margin: 0 0 8px !important; }
-      .metric-box, .pp-box, .mini-card { padding: 10px !important; }
+      .metric-box, .pp-box { padding: 10px !important; }
       .chart-canvas { height: 200px !important; }
     }
 
@@ -1331,7 +1171,7 @@
     .items-table tr:hover {
       background: rgba(255,255,255,.35);
     }
-    /* Header y filas con material glass (en vez del azul sólido heredado de la tabla de facturas) */
+    /* Header y filas con material glass (en vez del azul sólido heredado de la tabla genérica) */
     .items-table thead tr {
       background: rgba(255,255,255,.32);
     }
@@ -1428,7 +1268,7 @@
     }
     .login-box input:focus { outline: none; border-color: var(--blue); }
     #login-error { color: #c62828; font-size: 0.85rem; min-height: 18px; text-align: center; }
-    /* Con cualquier modal abierto (vista previa, visor de PDF, editar cliente, etc.)
+    /* Con cualquier modal abierto (confirmación, visor de PDF, editar fondo, etc.)
        la barra inferior queda tapada a medias detrás — mejor ocultarla del todo. */
     body:has(.modal-overlay.open) #bottom-nav { display: none; }
     /* ── Bottom Nav — idéntico a Fit-M ── */
@@ -1547,8 +1387,8 @@
     body.night .modal select option { background: #26262c; color: var(--text); }
     #default-tax-input { border: 1px solid rgba(0,0,0,.15); background: rgba(255,255,255,.5); color: var(--text); }
     body.night #default-tax-input { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.16); }
-    /* Mismos inputs/labels que los modales, para las sub-vistas de Ajustes (Clientes
-       Guardados, etc.) que ya no viven dentro de un .modal sino de una página. */
+    /* Mismos inputs/labels que los modales, para las sub-vistas de Ajustes (Copias
+       automáticas, Perfil, etc.) que ya no viven dentro de un .modal sino de una página. */
     .subview-form label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; color: var(--text-light); }
     .subview-form input, .subview-form select, .subview-form textarea {
       width: 100%;
@@ -1578,18 +1418,15 @@
     body.night .goal-bar { background: rgba(255,255,255,.10); }
     body.night .items-table tr:hover { background: rgba(255,255,255,.06); }
     body.night .chart-controls-row .divider { background: rgba(255,255,255,.12); }
-    /* El documento de la factura SIEMPRE claro (se imprime / exporta a PDF) */
+    /* El documento del PDF SIEMPRE claro (se imprime / exporta a PDF) */
     body.night .invoice-paper { background: #fff; }
     body.night .invoice-paper, body.night .invoice-paper * { color: #222 !important; }
     /* …pero re-asegura texto claro donde el fondo es de color propio (si no, la regla
        * !important de arriba lo vuelve oscuro e ilegible: cabeceras t2/t3/t5). */
     body.night .invoice-paper[data-tpl="2"] .inv-top,
-    body.night .invoice-paper[data-tpl="2"] .inv-top *,
-    body.night .invoice-paper[data-tpl="2"] .t2-invoice-label,
-    body.night .invoice-paper[data-tpl="2"] .t2-invoice-meta { color: #fff !important; }
+    body.night .invoice-paper[data-tpl="2"] .inv-top * { color: #fff !important; }
     body.night .invoice-paper[data-tpl="2"] .inv-issuer,
     body.night .invoice-paper[data-tpl="2"] .inv-issuer *,
-    body.night .invoice-paper[data-tpl="2"] .t2-issuer-sub,
     body.night .invoice-paper[data-tpl="2"] thead tr,
     body.night .invoice-paper[data-tpl="2"] thead th { color: #7a9ab8 !important; }
     body.night .invoice-paper[data-tpl="3"] thead tr,
@@ -1657,46 +1494,6 @@
     .t1-divider { border:none; border-top:1px solid #ddd; margin:10px 0; }
     .t1-factura-a { font-size:.68rem; text-transform:uppercase; letter-spacing:1px; color:#888; font-weight:600; margin-bottom:5px; }
     .t1-client-sub { font-size:.82rem; color:#888; line-height:1.5; }
-
-    /* ── Template 2: Moderno oscuro — form header ── */
-    .t2-header { display:flex; justify-content:space-between; align-items:center; }
-    .t2-logo-company { display:flex; align-items:center; gap:10px; }
-    .t2-issuer strong { display:block; font-size:.9rem; color:#fff; margin-bottom:2px; }
-    .t2-issuer-sub { font-size:.73rem; color:#7a9ab8; }
-    .t2-right { text-align:right; }
-    .t2-invoice-label { font-size:1.2rem; font-weight:300; color:#fff; letter-spacing:3px; }
-    .t2-invoice-meta { font-size:.76rem; color:#7a9ab8; margin-top:3px; }
-    .t2-client-box { background:#e8f0f7; border-radius:8px; padding:12px 16px; margin-bottom:14px; }
-    .t2-factura-a { font-size:.68rem; text-transform:uppercase; letter-spacing:1px; color:#3b6ea5; font-weight:600; margin-bottom:4px; }
-    .t2-client-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
-    .t2-client-data strong { font-size:.95rem; display:block; color:#1e2a3a; margin-bottom:2px; }
-    .t2-client-sub { font-size:.82rem; color:#6480a0; }
-
-    /* ── Template 3: Profesional — form header ── */
-    .t3-header { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:12px; }
-    .t3-right { text-align:right; }
-    .t3-invoice-title { font-size:1.5rem; font-weight:700; color:#3b5bdb; line-height:1; }
-    .t3-invoice-num { font-size:.85rem; color:#666; margin-top:4px; }
-    .t3-divider { border:none; border-top:2.5px solid #3b5bdb; margin:12px 0 14px; }
-    .t3-columns { display:flex; gap:20px; margin-bottom:14px; }
-    .t3-col { flex:1; }
-    .t3-col-label { font-size:.68rem; text-transform:uppercase; letter-spacing:1px; color:#3b5bdb; font-weight:700; margin-bottom:6px; }
-    .t3-col strong { font-size:.9rem; display:block; margin-bottom:3px; }
-    .t3-col-sub { font-size:.8rem; color:#666; line-height:1.5; }
-
-    /* ── Template 4: Glass — header igual al PDF ── */
-    .t4-header { display:flex; justify-content:space-between; align-items:center; }
-    .t4-logo-issuer { display:flex; align-items:center; gap:12px; }
-    .t4-issuer-inline strong { font-size:.95rem; display:block; margin-bottom:3px; color:#333; }
-    .t4-issuer-inline .t4-issuer-sub { font-size:.75rem; color:#666; }
-    .t4-header-right { text-align:right; }
-    .t4-factura-label { font-size:.68rem; text-transform:uppercase; letter-spacing:1px; color:#666; }
-    .t4-num { font-size:2rem; font-weight:800; line-height:1.05; margin:2px 0 6px; color:#333; }
-    .t4-client-box { background:rgba(255,255,255,.7); border:1px solid rgba(255,255,255,.85); border-radius:10px; padding:12px 16px; margin-bottom:16px; box-shadow:0 2px 8px rgba(0,0,0,.06); }
-    .t4-factura-a { font-size:.68rem; text-transform:uppercase; letter-spacing:1px; color:#666; font-weight:600; }
-    .t4-client-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
-    .t4-client-data { font-size:.88rem; color:#333; }
-    .t4-client-data strong { display:block; margin-bottom:2px; }
 
     @media print { #bottom-nav { display: none; } }
 
@@ -2160,40 +1957,8 @@
       </div>
       <div id="cl-items">
         <div class="cl-section">
-          <div class="cl-section-title">Pagos parciales <span class="cl-new" data-cl-date="2026-08-30">NEW</span></div>
-          <div class="cl-section-desc">Registra abonos y ve el saldo pendiente de cada factura.</div>
-        </div>
-        <div class="cl-section">
-          <div class="cl-section-title">Facturas recurrentes <span class="cl-new" data-cl-date="2026-08-30">NEW</span></div>
-          <div class="cl-section-desc">Repite una factura mensual en un toque, sin volver a armarla.</div>
-        </div>
-        <div class="cl-section">
-          <div class="cl-section-title">PDF combinado <span class="cl-new" data-cl-date="2026-08-30">NEW</span></div>
-          <div class="cl-section-desc">Descarga varias facturas seleccionadas en un solo archivo.</div>
-        </div>
-        <div class="cl-section">
-          <div class="cl-section-title">Fecha de cobro <span class="cl-new" data-cl-date="2026-08-30">NEW</span></div>
-          <div class="cl-section-desc">Nuevo indicador de días promedio de cobro en el dashboard.</div>
-        </div>
-        <div class="cl-section">
-          <div class="cl-section-title">Filtro de cliente <span class="cl-new" data-cl-date="2026-08-30">NEW</span></div>
-          <div class="cl-section-desc">Filtra las métricas del dashboard por cliente.</div>
-        </div>
-        <div class="cl-section">
-          <div class="cl-section-title">Recordatorio para cualquier pendiente <span class="cl-new" data-cl-date="2026-09-05">NEW</span></div>
-          <div class="cl-section-desc">"Enviar recordatorio" (WhatsApp) ahora aparece en cualquier factura pendiente, no solo en las vencidas.</div>
-        </div>
-        <div class="cl-section">
-          <div class="cl-section-title">Duplicar con revisión <span class="cl-new" data-cl-date="2026-09-05">NEW</span></div>
-          <div class="cl-section-desc">"Duplicar" ya no guarda de una — ahora te abre el formulario para que revises antes de guardar (igual que "Repetir" en recurrentes).</div>
-        </div>
-        <div class="cl-section">
-          <div class="cl-section-title">Mensaje de recordatorio personalizable <span class="cl-new" data-cl-date="2026-09-06">NEW</span></div>
-          <div class="cl-section-desc">Edita el texto de "Enviar recordatorio" en Ajustes → Perfil. Ya no se manda solo por WhatsApp: se abre el selector para compartirlo por cualquier app que tengas.</div>
-        </div>
-        <div class="cl-section">
-          <div class="cl-section-title">Asunto y descripción al compartir <span class="cl-new" data-cl-date="2026-09-06">NEW</span></div>
-          <div class="cl-section-desc">Personaliza en Ajustes → Perfil el asunto y la descripción que acompañan al PDF cuando compartes facturas seleccionadas (no van dentro del archivo; por correo se ven como asunto y cuerpo del email).</div>
+          <div class="cl-section-title">Primera versión <span class="cl-new" data-cl-date="2026-09-21">NEW</span></div>
+          <div class="cl-section-desc">Fondos con meta, movimientos (Meter · Sacar prestado · Devolver · Gastar), préstamos con fecha, Resumen y PDF.</div>
         </div>
       </div>
       <button class="cl-close" onclick="closeChangelog()">¡Qué bueno saberlo!</button>
@@ -3171,7 +2936,7 @@
     // ── Página "Novedades" (Ajustes → Novedades) ──────────────────────────────
     // Sub-vista de pantalla completa dentro de Ajustes: reemplaza el contenido de
     // Ajustes y se desliza como cualquier pestaña (mismo patrón que switchTab entre
-    // Facturación‹›Dashboard‹›Ajustes) — igual que renderNovedadesPage() en Fit-M.
+    // Fondos‹›Movimientos‹›Resumen‹›Ajustes) — igual que renderNovedadesPage() en Fit-M.
     // No es un modal que crece de un botón: es una sub-vista real, con su "← Volver".
     function _slideSettingsView(dir) {
       const view = document.getElementById('view-settings');
@@ -3179,10 +2944,10 @@
       void view.offsetWidth;
       view.classList.add(dir === 'right' ? 'tab-slide-right' : 'tab-slide-left');
     }
-    // Toda sub-vista de Ajustes (Novedades, Tema, Clientes Guardados, Copias
-    // automáticas...) comparte el mismo mecanismo: esconde la lista normal, muestra
+    // Toda sub-vista de Ajustes (Novedades, Tema, Copias automáticas, Perfil)
+    // comparte el mismo mecanismo: esconde la lista normal, muestra
     // la página pedida, y desliza como cualquier pestaña — igual que switchTab entre
-    // Facturación‹›Dashboard‹›Ajustes. Reusado también por el reset en switchTab().
+    // Fondos‹›Movimientos‹›Resumen‹›Ajustes. Reusado también por el reset en switchTab().
     const SETTINGS_SUBVIEWS = ['novedades-page', 'tema-page', 'copias-page', 'perfil-page'];
     function _openSettingsSubView(id) {
       document.querySelector('.settings-page').style.display = 'none';
@@ -3302,15 +3067,15 @@
         : '';
       const id = escapeHTML(m.id);
       return `
-        <div class="invoice-card" data-card-id="${id}" style="${cardStyle}">
-          <div class="invoice-card-info" data-action="edit" data-id="${id}" style="cursor:pointer;">
-            <div class="invoice-card-num">${MOV_TYPES[m.type]}${badge}</div>
-            <div class="invoice-card-client">${escapeHTML(fundName(m.fundId))}${m.note ? ' · ' + escapeHTML(m.note) : ''}</div>
-            <div class="invoice-card-date" style="color:var(--text-light);font-size:0.82rem;margin-top:2px;">${formatDateDisplay(m.date)}</div>
+        <div class="mov-card" data-card-id="${id}" style="${cardStyle}">
+          <div class="mov-card-info" data-action="edit" data-id="${id}" style="cursor:pointer;">
+            <div class="mov-card-num">${MOV_TYPES[m.type]}${badge}</div>
+            <div class="mov-card-client">${escapeHTML(fundName(m.fundId))}${m.note ? ' · ' + escapeHTML(m.note) : ''}</div>
+            <div class="mov-card-date" style="color:var(--text-light);font-size:0.82rem;margin-top:2px;">${formatDateDisplay(m.date)}</div>
             ${sub}
           </div>
-          <div class="invoice-card-total" data-action="edit" data-id="${id}" style="cursor:pointer;color:${positive ? '#2e7d32' : '#c62828'};">${positive ? '+' : '−'}${formatMoney(m.amount)}</div>
-          <div class="invoice-card-actions">
+          <div class="mov-card-total" data-action="edit" data-id="${id}" style="cursor:pointer;color:${positive ? '#2e7d32' : '#c62828'};">${positive ? '+' : '−'}${formatMoney(m.amount)}</div>
+          <div class="mov-card-actions">
             ${isLoan && !settled ? `<button class="btn btn-success btn-sm" data-action="repay" data-id="${id}">Devolver</button>` : ''}
             <div class="overflow-wrap">
               <button class="btn btn-ghost btn-sm overflow-trigger" data-id="${id}" title="Más acciones" aria-label="Más acciones" aria-haspopup="true" style="padding:6px 10px;font-size:1.1rem;line-height:1;">⋮</button>
@@ -3362,7 +3127,7 @@
     // ── Borrar con deshacer (10 s) ──
     // ponytail: un solo slot — borrar un segundo movimiento antes de los 10s del primero
     // pisa `lastDeleted` y el toast viejo, si se toca "Deshacer", restaura el borrado
-    // nuevo en vez del que decía. Mismo límite que tenía Facturas (lastDeletedInvoice);
+    // nuevo en vez del que decía. Mismo límite de una sola casilla que ya tenía Facturas;
     // solución si molesta: cola de pendientes en vez de una sola variable.
     let lastDeleted = null;   // array de movimientos borrados (préstamo + sus devoluciones)
     async function confirmDelete(id, triggerEl) {
@@ -3400,15 +3165,15 @@
       const pct = f.goal > 0 ? Math.max(0, Math.min(100, have / f.goal * 100)) : 0;
       const accent = escapeHTML(f.color || '#5b8fa8');
       return `
-        <div class="invoice-card fund-card" data-card-id="${f.id}" style="${animate ? `animation-delay:${delay}ms;` : 'animation:none;'}border-left:4px solid ${accent};">
-          <div class="invoice-card-info" data-action="fund-open" data-id="${f.id}" style="cursor:pointer;">
-            <div class="invoice-card-num">${escapeHTML(f.name)}</div>
-            <div class="invoice-card-client" style="color:#2e7d32;">Tienes ${formatMoney(have)}</div>
+        <div class="mov-card fund-card" data-card-id="${f.id}" style="${animate ? `animation-delay:${delay}ms;` : 'animation:none;'}border-left:4px solid ${accent};">
+          <div class="mov-card-info" data-action="fund-open" data-id="${f.id}" style="cursor:pointer;">
+            <div class="mov-card-num">${escapeHTML(f.name)}</div>
+            <div class="mov-card-client" style="color:#2e7d32;">Tienes ${formatMoney(have)}</div>
             ${owed > 0 ? `<div class="badge-pulse" style="color:#c0540a;font-size:0.8rem;font-weight:600;margin-top:2px;">Debes ${formatMoney(owed)}</div>` : ''}
             ${f.goal > 0 ? `<div class="goal-bar"><span style="width:${pct.toFixed(1)}%;background:${accent};"></span></div>
             <div style="font-size:0.78rem;color:var(--text-light);margin-top:3px;">${formatMoney(have)} de ${formatMoney(f.goal)} · ${pct.toFixed(0)}%</div>` : ''}
           </div>
-          <div class="invoice-card-actions">
+          <div class="mov-card-actions">
             <div class="overflow-wrap">
               <button class="btn btn-ghost btn-sm overflow-trigger" data-kind="fund" data-id="${f.id}" aria-label="Más acciones" aria-haspopup="true" style="padding:6px 10px;font-size:1.1rem;line-height:1;">⋮</button>
             </div>
@@ -3684,7 +3449,7 @@
       hasUnsavedChanges = value;
       updateUnsavedIndicator();
     }
-    // El botón Guardar se pone naranja mientras hay cambios sin guardar (en Facturas era el de PDF).
+    // El botón Guardar se pone naranja mientras hay cambios sin guardar.
     function updateUnsavedIndicator() {
       const btn = document.getElementById('save-mov-btn');
       const inCreateView = document.getElementById('view-create').style.display !== 'none';
@@ -3747,8 +3512,8 @@
       if (formType === 'repay') {
         const loan = movements.find(m => m.id === formLoanId && m.type === 'loan' && m.fundId === formFundId);
         if (!loan) throw new Error('Elige a qué préstamo devuelves.');
-        // Aviso sin bloquear (como savePayment en Facturas): el saldo cuenta la devolución que
-        // se está editando, así que se le resta para no avisar de más.
+        // Aviso sin bloquear: el saldo cuenta la devolución que se está editando,
+        // así que se le resta para no avisar de más.
         const own = previous && previous.type === 'repay' && previous.loanId === loan.id ? previous.amount : 0;
         if (amount > loanBalance(loan).balance + own) showToast('Estás devolviendo más de lo que debes en ese préstamo', 'info', { duration: 4500 });
       }
@@ -3938,7 +3703,7 @@
       }
       if (triggerEl) {
         const card = editingMovementId
-          ? document.querySelector(`.invoice-card[data-card-id="${CSS.escape(editingMovementId)}"]`)
+          ? document.querySelector(`.mov-card[data-card-id="${CSS.escape(editingMovementId)}"]`)
           : null;
         let target = triggerEl;
         if (card) {
@@ -3996,7 +3761,7 @@
       const views = {};
       for (const k in _TAB_VIEWS) views[k] = document.getElementById(_TAB_VIEWS[k]);
       const createView = document.getElementById('view-create');
-      // Misma pestaña ya visible: solo sube al principio (ver pitfall #15 en CLAUDE.md de Facturas).
+      // Misma pestaña ya visible: solo sube al principio (ver pitfall #3 en este CLAUDE.md).
       if (!_createViewOpen && tab === _lastActiveTab && views[tab] && views[tab].style.display !== 'none') {
         if (window.scrollY > 0) { window.scrollTo({ top: 0, behavior: 'smooth' }); _tabScrollY[tab] = 0; }
         return;
@@ -4554,8 +4319,8 @@
         return { valid: false, error: 'La fecha no puede ser anterior a 2000.' };
       }
 
-      // Cualquier fecha distinta de hoy se permite (facturar por adelantado o con
-      // fecha atrasada es válido) pero se marca para avisar al usuario en vez de
+      // Cualquier fecha distinta de hoy se permite (registrar con fecha futura o
+      // atrasada es válido) pero se marca para avisar al usuario en vez de
       // dejarlo sin darse cuenta de que no puso la fecha de hoy.
       return { valid: true, future: date > today, past: date < today };
     }
@@ -4796,8 +4561,8 @@
       };
     }
     // ── Animación compartida "crece desde el botón" (Fit-M) para cualquier
-    // modal .modal-overlay > .modal — usada por la vista previa de factura,
-    // el selector de plantilla y el modal de gastos. ──
+    // modal .modal-overlay > .modal — usada por confirmaciones (_confirmDialog),
+    // el visor de PDF y el modal de nuevo/editar fondo. ──
     // triggerEl (opcional): el botón/tarjeta que se tocó — si se pasa, el modal
     // crece desde ahí; si no, usa la animación normal del modal.
     function _growModalFromRect(card, triggerEl) {
@@ -4852,7 +4617,7 @@
       overlay.style.animation = '';
     }
     // Misma animación, pero para una VISTA de pantalla completa (#view-create al
-    // editar una factura) en vez de un .modal chico y centrado — usa --gradius-end:0px
+    // editar un movimiento) en vez de un .modal chico y centrado — usa --gradius-end:0px
     // porque la vista no es una tarjeta redondeada, es la página entera.
     // Pisa la transition normal de deslizamiento (all .5s) mientras corre para que
     // no compitan; se restaura sola al terminar (ver showView).
@@ -5225,7 +4990,7 @@
       const action = btn.dataset.action;
       const id = btn.dataset.id;
 
-      const cardOf = () => document.querySelector(`.invoice-card[data-card-id="${CSS.escape(id)}"]`) || btn;
+      const cardOf = () => document.querySelector(`.mov-card[data-card-id="${CSS.escape(id)}"]`) || btn;
       if (action === 'dash-fund-filter') {
         setDashboardFundFilter(id);
         return;
@@ -5550,7 +5315,7 @@
     (function setupMultiTabGuard() {
       if (typeof BroadcastChannel === 'undefined') return;
       try {
-        const channel = new BroadcastChannel('facturas-tabs');
+        const channel = new BroadcastChannel('bank-tabs');
         const myId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 
         // Announce this tab is alive on every load AND in response to pings
