@@ -4580,6 +4580,101 @@
       return _pdfLoadPromise;
     }
 
+    // ═══════════════════════ PDF ═══════════════════════
+    const _PDF_W = 612, _PDF_MARGIN = 45, _PDF_BLUE = [91, 143, 168];
+    function _pdfTitle(doc, title, y) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(40);
+      doc.text(title, _PDF_MARGIN, y); y += 18;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(110);
+      if (PROFILE.name) { doc.text(PROFILE.name, _PDF_MARGIN, y); y += 12; }
+      doc.text('Generado: ' + new Date().toLocaleString('es-ES'), _PDF_MARGIN, y);
+      return y + 18;
+    }
+    function _pdfSection(doc, title, y) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(..._PDF_BLUE);
+      doc.text(title, _PDF_MARGIN, y); y += 6;
+      doc.setDrawColor(..._PDF_BLUE); doc.line(_PDF_MARGIN, y, _PDF_W - _PDF_MARGIN, y); y += 13;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(40);
+      return y;
+    }
+
+    async function generateFundStatementPDF(fundId) {
+      const f = fundById(fundId);
+      if (!f) return;
+      await _ensureJsPDF();
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+      const W = _PDF_W, margin = _PDF_MARGIN;
+      const { have, owed } = fundBalance(f.id);
+      let y = _pdfTitle(doc, 'Estado del fondo: ' + f.name, 55);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(40);
+      doc.text('Tienes ' + formatMoneyForPDF(have)
+        + (owed > 0 ? '   ·   Debes ' + formatMoneyForPDF(owed) : '')
+        + (f.goal > 0 ? '   ·   Meta ' + formatMoneyForPDF(f.goal) + ' (' + Math.round(Math.min(100, have / f.goal * 100)) + '%)' : ''), margin, y);
+      y += 22;
+      const header = () => {
+        y = _pdfSection(doc, 'Movimientos', y);
+        doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(110);
+        doc.text('Fecha', margin, y); doc.text('Movimiento', margin + 100, y);
+        doc.text('Entra', W - margin - 150, y, { align: 'right' });
+        doc.text('Sale', W - margin - 80, y, { align: 'right' });
+        doc.text('Saldo', W - margin, y, { align: 'right' });
+        y += 13;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(40);
+      };
+      header();
+      const list = movements.filter(m => m.fundId === f.id).sort((a, b) => a.date.localeCompare(b.date) || (a.id > b.id ? 1 : -1));
+      let running = 0;
+      list.forEach(m => {
+        if (y > 740) { doc.addPage(); y = 55; header(); }
+        running += MOV_SIGN[m.type] * m.amount;
+        doc.text(formatDateDisplay(m.date), margin, y);
+        doc.text(doc.splitTextToSize(MOV_TYPES[m.type] + (m.note ? ' — ' + m.note : ''), 200)[0], margin + 100, y);
+        doc.text(formatMoneyForPDF(m.amount), MOV_SIGN[m.type] > 0 ? W - margin - 150 : W - margin - 80, y, { align: 'right' });
+        doc.text(formatMoneyForPDF(round2(running)), W - margin, y, { align: 'right' });
+        y += 14;
+      });
+      const open = list.filter(m => m.type === 'loan' && !isLoanSettled(m));
+      if (open.length) {
+        y += 10;
+        if (y > 700) { doc.addPage(); y = 55; }
+        y = _pdfSection(doc, 'Préstamos pendientes', y);
+        open.forEach(l => {
+          if (y > 740) { doc.addPage(); y = 55; }
+          const due = l.dueDate ? (isLoanOverdue(l) ? ' (vencido ' : ' (devolver antes del ') + formatDateDisplay(l.dueDate) + ')' : '';
+          doc.text(formatDateDisplay(l.date) + (l.note ? ' — ' + l.note : '') + due, margin, y);
+          doc.text(formatMoneyForPDF(loanBalance(l).balance), W - margin, y, { align: 'right' });
+          y += 14;
+        });
+      }
+      _deliverPDF(doc, `Bank-${f.name.replace(/[^\w-]+/g, '_')}.pdf`, 'Estado del fondo — ' + f.name);
+    }
+
+    async function generateSummaryPDF() {
+      if (funds.length === 0) { showToast('No hay fondos todavía', 'info'); return; }
+      await _ensureJsPDF();
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+      const W = _PDF_W, margin = _PDF_MARGIN;
+      let y = _pdfTitle(doc, 'Resumen de ahorro', 55);
+      y = _pdfSection(doc, 'Fondos', y);
+      funds.forEach(f => {
+        if (y > 740) { doc.addPage(); y = 55; }
+        const b = fundBalance(f.id);
+        doc.setFont('helvetica', 'bold'); doc.text(f.name, margin, y);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Tienes ' + formatMoneyForPDF(b.have) + (b.owed > 0 ? ' · Debes ' + formatMoneyForPDF(b.owed) : '')
+          + (f.goal > 0 ? ' · Meta ' + Math.round(Math.min(100, b.have / f.goal * 100)) + '%' : ''), W - margin, y, { align: 'right' });
+        y += 15;
+      });
+      const t = fundBalance(null);
+      y += 6; doc.setDrawColor(..._PDF_BLUE); doc.line(margin, y, W - margin, y); y += 16;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+      doc.text('Total', margin, y);
+      doc.text('Tienes ' + formatMoneyForPDF(t.have) + (t.owed > 0 ? ' · Debes ' + formatMoneyForPDF(t.owed) : ''), W - margin, y, { align: 'right' });
+      _deliverPDF(doc, `Bank-resumen-${todayISO()}.pdf`, 'Resumen de ahorro');
+    }
+
     // ¿Dispositivo móvil? Solo iPhone/iPad/Android reales.
     // OJO: NO incluir _isStandalone — una PWA instalada en ESCRITORIO también es
     // standalone, y si la tratamos como móvil, "Ver/Generar PDF" intentan el menú
