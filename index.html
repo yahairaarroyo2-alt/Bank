@@ -52,10 +52,10 @@
       --shadow: 0 2px 12px rgba(0,0,0,.08);
       /* Liquid Glass (estilo Fit-M) */
       --lg-card: rgba(255,255,255,.52);
-      /* 40→20px: tras esta ronda, los únicos que siguen usando esta variable son los
-         menús ⋮ (.overflow-dropdown) y la barra de selección (#selection-bar) — flotan
-         sobre listas largas y se recomponen en cada frame de scroll mientras están
-         abiertos. .modal tiene su propio blur(12px) aparte (ver su regla). */
+      /* 40→20px: tras esta ronda, el único que sigue usando esta variable es el
+         menú ⋮ (.overflow-dropdown) — flota sobre listas largas y se recompone en
+         cada frame de scroll mientras está abierto. .modal tiene su propio
+         blur(12px) aparte (ver su regla). */
       --lg-blur: blur(20px) saturate(180%);
       --lg-border: 1px solid rgba(255,255,255,.55);
       --lg-shadow: 0 8px 32px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.08), inset 0 1px 0 rgba(255,255,255,.8), inset 0 -1px 0 rgba(0,0,0,.04);
@@ -4807,26 +4807,7 @@
       _closeDashMenu();
     }
 
-    // Menú ⋮ de la barra de selección (acciones en lote). La barra vive pegada
-    // abajo de la pantalla, así que el menú siempre se abre hacia ARRIBA del botón
-    // (a diferencia de toggleDashMenu, que decide según el espacio disponible).
-    // Animación "genie" (ver toggleCardMenu/toggleDashMenu): el botón ⋮ se transforma
-    // en el panel. A diferencia de esos dos, este SIEMPRE crece hacia ARRIBA (la barra
-    // de selección vive pegada abajo de la pantalla) — el final es rect.top - alto del
-    // menú, no rect.top.
-
-    // Cierre instantáneo: para cuando el scroll/toque interrumpe (ver closeAllDropdowns).
-
-    // Cierre animado: encoge el panel de vuelta hacia el botón ⋮ que lo abrió.
-
-    // Marca todas las facturas seleccionadas como pagadas/pendientes de una vez.
-
-    // Elimina todas las facturas seleccionadas. Guarda UNA copia automática antes
-    // (recuperable desde Ajustes → Copias automáticas) en vez de un "deshacer" por
-    // factura como en confirmDelete — con varias a la vez, un solo respaldo basta.
-
-
-    // Los únicos 3 elementos con la clase .overflow-dropdown son justo estos —
+    // Los únicos 2 elementos con la clase .overflow-dropdown son justo estos —
     // barato de chequear y evita todo el trabajo de cerrar/animar en cada scroll
     // o toque cuando no hay ningún menú abierto (el caso normal, casi siempre).
     function _anyMenuOpen() {
@@ -5055,7 +5036,7 @@
       if (!snap) { showToast('Esa copia ya no existe', 'error'); return; }
       const n = (snap.movements || []).length;
       if (!(await _confirmDialog(`¿Restaurar copia del ${new Date(snap.ts).toLocaleString('es-ES')} con ${n} movimiento(s)?\n\nSe descargará un backup de tus datos actuales antes de restaurar.`, { confirmLabel: 'Restaurar' }))) return;
-      if (movements.length > 0) downloadAutoBackup('antes-de-restaurar-snapshot');
+      if (movements.length > 0 || funds.length > 0) downloadAutoBackup('antes-de-restaurar-snapshot');
       _applyBackup(snap);
       closeCopiasPage();
       _refreshCurrentView();
@@ -5118,7 +5099,7 @@
       try { dateStr = localStorage.getItem('bank_pre_import_date')?.slice(0, 10) || dateStr; } catch {}
       const n = (snapshot.movements || []).length;
       if (!(await _confirmDialog(`¿Restaurar la copia automática del ${dateStr} con ${n} movimiento(s)?\n\nEsto reemplazará tus datos actuales (se descargará un backup primero).`, { confirmLabel: 'Restaurar' }))) return;
-      if (movements.length > 0) downloadAutoBackup('antes-de-restaurar');
+      if (movements.length > 0 || funds.length > 0) downloadAutoBackup('antes-de-restaurar');
       _applyBackup(snapshot);
       try { localStorage.removeItem('bank_pre_import_backup'); localStorage.removeItem('bank_pre_import_date'); } catch {}
       _refreshCurrentView();
