@@ -4114,7 +4114,7 @@
       return `<table class="items-table"><thead><tr><th>Fondo</th><th style="text-align:right;">Tienes</th><th style="text-align:right;">Debes</th></tr></thead><tbody>` +
         funds.map(f => {
           const b = fundBalance(f.id);
-          return `<tr style="cursor:pointer;" onclick="setDashboardFundFilter('${f.id}')"><td>${escapeHTML(f.name)}</td><td style="text-align:right;">${formatMoney(b.have)}</td><td style="text-align:right;">${b.owed > 0 ? formatMoney(b.owed) : '—'}</td></tr>`;
+          return `<tr style="cursor:pointer;" data-action="dash-fund-filter" data-id="${escapeHTML(f.id)}"><td>${escapeHTML(f.name)}</td><td style="text-align:right;">${formatMoney(b.have)}</td><td style="text-align:right;">${b.owed > 0 ? formatMoney(b.owed) : '—'}</td></tr>`;
         }).join('') + '</tbody></table>';
     }
     function _updateFundStatementMenuItem() {
@@ -4128,6 +4128,10 @@
       const list = getDashboardMovements();
       const mt = calculateMetrics(list);
       const totals = fundBalance(dashboardFundFilter);
+      // Vencidos sobre TODOS los movimientos (solo filtrados por fondo, no por período) — igual
+      // que `totals`, que tampoco filtra por período. mt.overdueCount sí filtra por período (viene
+      // de `list`), así que usarlo acá podía mostrar "Debes $500 · nada vencido" con un período corto.
+      const overdueCount = movements.filter(m => (!dashboardFundFilter || m.fundId === dashboardFundFilter) && isLoanOverdue(m)).length;
       const chartData = getBalanceByPeriod(list);
       const el = document.getElementById('dashboard-content');
       const customInputsHTML = dashboardPeriod === 'custom' ? `
@@ -4167,7 +4171,7 @@
               <div class="pp-box pending">
                 <div class="pp-label">Debes</div>
                 <div class="pp-value">${formatMoney(totals.owed)}</div>
-                <div class="pp-sub">${mt.overdueCount ? plural(mt.overdueCount, 'préstamo') + ' vencido' + (mt.overdueCount !== 1 ? 's' : '') : 'nada vencido'}</div>
+                <div class="pp-sub">${overdueCount ? plural(overdueCount, 'préstamo') + ' vencido' + (overdueCount !== 1 ? 's' : '') : 'nada vencido'}</div>
               </div>
               <div class="pp-box total-box">
                 <div class="pp-label">Ahorro neto del período</div>
@@ -5122,7 +5126,10 @@
       const id = btn.dataset.id;
 
       const cardOf = () => document.querySelector(`.invoice-card[data-card-id="${CSS.escape(id)}"]`) || btn;
-      if (action === 'fund-open') {
+      if (action === 'dash-fund-filter') {
+        setDashboardFundFilter(id);
+        return;
+      } else if (action === 'fund-open') {
         openFundPage(id, btn.closest('.fund-card') || btn);
         return;
       } else if (action === 'fund-edit') {
