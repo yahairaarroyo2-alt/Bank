@@ -1529,7 +1529,7 @@
       <button id="google-btn" onclick="doGoogleLogin()" style="
         display:flex;align-items:center;justify-content:center;gap:10px;
         width:100%;padding:11px;border:1px solid rgba(255,255,255,.5);border-radius:20px;
-        background:rgba(255,255,255,.25);backdrop-filter:blur(20px) saturate(160%);-webkit-backdrop-filter:blur(20px) saturate(160%);
+        background:rgba(255,255,255,.25);
         box-shadow:inset 0 2px 1px rgba(255,255,255,.95),inset 0 -3px 6px rgba(255,255,255,.32),0 4px 16px rgba(0,0,0,.08);
         font-size:0.95rem;font-family:inherit;cursor:pointer;
         font-weight:600;color:var(--text);transition:background 0.15s;">
@@ -1672,7 +1672,7 @@
         <div class="settings-section-label">CUENTA</div>
         <div class="settings-section" style="margin-bottom:22px;">
           <button class="settings-row" onclick="openPasswordModal()" style="padding:20px;">
-            <div id="account-avatar" style="width:54px;height:54px;border-radius:27px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:var(--text);flex-shrink:0;background:rgba(255,255,255,.28);backdrop-filter:blur(20px) saturate(160%);-webkit-backdrop-filter:blur(20px) saturate(160%);border:1px solid rgba(255,255,255,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.8),0 4px 16px rgba(0,0,0,.08);">?</div>
+            <div id="account-avatar" style="width:54px;height:54px;border-radius:27px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:var(--text);flex-shrink:0;background:rgba(255,255,255,.28);border:1px solid rgba(255,255,255,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.8),0 4px 16px rgba(0,0,0,.08);">?</div>
             <div class="settings-row-text">
               <div class="settings-row-title" style="font-size:1rem;" id="account-email-display">—</div>
               <div class="settings-row-sub">Contraseña y cuenta</div>
@@ -1945,7 +1945,7 @@
       <input id="fund-color" type="color" value="#5b8fa8" style="width:56px;height:36px;padding:2px;border-radius:8px;">
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeFundModal()">Cancelar</button>
-        <button class="btn btn-primary" onclick="saveFundModal()">Guardar</button>
+        <button class="btn btn-primary" id="save-fund-btn" onclick="saveFundModal()">Guardar</button>
       </div>
     </div>
   </div>
@@ -2233,6 +2233,11 @@
           errEl.textContent = 'El inicio con correo no está habilitado en Firebase. Usa Google o habilita Email/Password en la consola.';
           btn.disabled = false; btn.textContent = 'Entrar / Crear cuenta';
         } else if (['auth/user-not-found','auth/invalid-credential','auth/invalid-login-credentials','auth/invalid-email','auth/internal-error'].includes(e.code)) {
+          // Antes creaba la cuenta nueva directo, sin preguntar — un correo mal escrito
+          // (p.ej. "gmial.com") abría una cuenta vacía sin avisar, y parecía que se había
+          // perdido todo lo que ya tenías guardado.
+          const crear = await _confirmDialog(`No existe una cuenta con el correo "${email}". ¿Quieres crear una cuenta nueva con este correo y contraseña?`, { confirmLabel: 'Crear cuenta' });
+          if (!crear) { btn.disabled = false; btn.textContent = 'Entrar / Crear cuenta'; return; }
           try { await _auth.createUserWithEmailAndPassword(email, pass); }
           catch (e2) {
             // Si el correo ya existe, el error original era contraseña incorrecta, no usuario nuevo
@@ -2256,8 +2261,21 @@
       }
     }
 
+    // Borra los datos financieros de ESTE dispositivo al cerrar sesión (quedan a salvo en
+    // la nube) — si no, la próxima persona que entre con su cuenta en el mismo teléfono
+    // los vería, y sus propios datos terminarían subiéndose a la cuenta de quien cerró
+    // sesión (el merge de _loadFromFirestore trata lo que encuentra local como "para
+    // subir"). Sin conexión avisa aparte: lo que no se alcanzó a sincronizar se perdería.
     async function doLogout() {
-      if (await _confirmDialog('¿Cerrar sesión?', { confirmLabel: 'Cerrar sesión', danger: true })) { _auth.signOut(); }
+      const offlineWarning = navigator.onLine ? '' : '\n\nEstás sin conexión: si tienes cambios sin sincronizar, se perderán al borrar los datos de este dispositivo.';
+      if (!(await _confirmDialog('¿Cerrar sesión? Se borran tus datos de este dispositivo (quedan a salvo en la nube).' + offlineWarning, { confirmLabel: 'Cerrar sesión', danger: true }))) return;
+      _stopRealtimeSync();
+      try {
+        ['bank_funds', 'bank_movements', 'bank_profile', 'bank_home_tab', 'bank_snapshots',
+         'bank_pre_import_backup', 'bank_pre_import_date', 'bank_draft', 'bank_tombstones'].forEach(k => localStorage.removeItem(k));
+      } catch (e) { console.warn('No se pudo limpiar el dispositivo al cerrar sesión:', e); }
+      funds = []; movements = []; PROFILE = { name: '' }; _tombFunds = {}; _tombMovements = {};
+      await _auth.signOut();
     }
 
     function sendPasswordResetAndClose() {
@@ -2407,6 +2425,78 @@
     const _fundRef = () => _db.collection('users').doc(_currentUser.uid).collection('funds');
     const _movRef  = () => _db.collection('users').doc(_currentUser.uid).collection('movements');
     const _setRef  = () => _db.collection('users').doc(_currentUser.uid).collection('settings').doc('main');
+    const _tombRef = () => _db.collection('users').doc(_currentUser.uid).collection('settings').doc('tombstones');
+
+    // ── "Tumbas" de borrado ──────────────────────────────────────────────────
+    // Si borras algo en un dispositivo mientras otro estaba sin conexión (o con la app
+    // cerrada), ese otro dispositivo sigue teniendo la copia vieja en su localStorage.
+    // Al reconectar, _mergeCollection (más abajo) hacía una unión local↔nube: veía esa
+    // copia vieja como "algo nuevo que solo existe acá" y la volvía a SUBIR — resucitando
+    // lo que ya habías borrado, en los dos dispositivos. Guardar solo el ID y cuándo se
+    // borró (no el contenido) alcanza para que el merge sepa "esto no es nuevo, está
+    // muerto" y lo ignore en vez de resucitarlo.
+    let _tombFunds = {}, _tombMovements = {};
+    const TOMBSTONE_MAX_AGE_MS = 180 * 86400000;   // de sobra para que cualquier dispositivo reconecte
+    function _loadTombstonesLocal() {
+      try {
+        const raw = JSON.parse(localStorage.getItem('bank_tombstones') || '{}');
+        _tombFunds = raw.funds && typeof raw.funds === 'object' ? raw.funds : {};
+        _tombMovements = raw.movements && typeof raw.movements === 'object' ? raw.movements : {};
+      } catch { _tombFunds = {}; _tombMovements = {}; }
+    }
+    function _pruneTombstones(map) {
+      const cutoff = Date.now() - TOMBSTONE_MAX_AGE_MS;
+      for (const id in map) if (map[id] < cutoff) delete map[id];
+      return map;
+    }
+    function _saveTombstonesLocal() {
+      _pruneTombstones(_tombFunds); _pruneTombstones(_tombMovements);
+      safeSetItem('bank_tombstones', JSON.stringify({ funds: _tombFunds, movements: _tombMovements }));
+    }
+    // kind: 'funds' | 'movements'. Se llama al borrar — local al instante, nube de fondo.
+    function _recordTombstones(kind, ids) {
+      if (!ids || !ids.length) return;
+      const map = kind === 'funds' ? _tombFunds : _tombMovements;
+      const now = Date.now();
+      ids.forEach(id => { map[id] = now; });
+      _saveTombstonesLocal();
+      if (!_currentUser) return;
+      const patch = { [kind]: {} };
+      ids.forEach(id => { patch[kind][id] = now; });
+      _tombRef().set(patch, { merge: true }).catch(e => console.warn('tombstone sync:', e));
+    }
+    // Deshacer un borrado (ver undoDelete) o restaurar un backup: esos ids dejan de estar
+    // muertos — si no se limpia también acá, el próximo merge los volvería a tratar como
+    // tumbas y los ocultaría de nuevo apenas reconecte otro dispositivo.
+    function _clearTombstones(kind, ids) {
+      if (!ids || !ids.length) return;
+      const map = kind === 'funds' ? _tombFunds : _tombMovements;
+      ids.forEach(id => delete map[id]);
+      _saveTombstonesLocal();
+      if (!_currentUser) return;
+      const patch = {};
+      ids.forEach(id => { patch[`${kind}.${id}`] = firebase.firestore.FieldValue.delete(); });
+      _tombRef().update(patch).catch(() => {});   // doc de tumbas inexistente todavía: no hay nada que borrar
+    }
+    // Import/restore de backup: el backup ES la verdad nueva — nada de lo que traiga debe
+    // seguir marcado como "muerto" de una tanda de borrados anterior.
+    function _clearAllTombstones() {
+      _tombFunds = {}; _tombMovements = {};
+      try { localStorage.removeItem('bank_tombstones'); } catch {}
+      if (_currentUser) _tombRef().delete().catch(() => {});
+    }
+    async function _fetchCloudTombstones() {
+      if (!_currentUser) return;
+      try {
+        const snap = await _tombRef().get();
+        if (snap.exists) {
+          const d = snap.data();
+          Object.assign(_tombFunds, d.funds || {});
+          Object.assign(_tombMovements, d.movements || {});
+          _saveTombstonesLocal();
+        }
+      } catch (e) { console.warn('tombstone fetch:', e); }
+    }
 
     // Con la persistencia offline habilitada, sin conexión estas promesas quedan pendientes
     // hasta reconectar — no caen en el catch. Si SÍ caen es un error real (permisos, doc
@@ -2466,25 +2556,30 @@
       [_unsubFunds, _unsubMovements, _unsubSettings].forEach(u => { if (u) u(); });
       _unsubFunds = _unsubMovements = _unsubSettings = null;
     }
-    // Merge local↔nube de UNA colección: la nube gana en mismo id; lo que solo existe local se sube.
-    async function _mergeCollection(ref, local, normalize) {
+    // Merge local↔nube de UNA colección: la nube gana en mismo id; lo que solo existe local
+    // se sube — SALVO que esté en `tomb` (esta cuenta/movimiento se borró en otro lado
+    // mientras este dispositivo estaba desconectado; ver "Tumbas de borrado" arriba).
+    async function _mergeCollection(ref, local, normalize, tomb) {
+      const isTomb = id => tomb && Object.prototype.hasOwnProperty.call(tomb, id);
       const cloud = (await ref().get()).docs.map(d => d.data());
       if (cloud.length === 0) {
-        if (local.length) await _commitOpsInChunks(local.map(x => b => b.set(ref().doc(x.id), x)));
-        return local;
+        const toUpload = local.filter(x => !isTomb(x.id));
+        if (toUpload.length) await _commitOpsInChunks(toUpload.map(x => b => b.set(ref().doc(x.id), x)));
+        return toUpload;
       }
       const merged = new Map();
-      local.forEach(x => merged.set(x.id, x));
-      cloud.forEach(x => merged.set(x.id, x));
+      local.forEach(x => { if (!isTomb(x.id)) merged.set(x.id, x); });
+      cloud.forEach(x => { if (!isTomb(x.id)) merged.set(x.id, x); });
       const cloudIds = new Set(cloud.map(x => x.id));
-      const localOnly = local.filter(x => !cloudIds.has(x.id));
+      const localOnly = local.filter(x => !cloudIds.has(x.id) && !isTomb(x.id));
       if (localOnly.length) await _commitOpsInChunks(localOnly.map(x => b => b.set(ref().doc(x.id), x)));
       return normalize(Array.from(merged.values()));
     }
     async function _loadFromFirestore() {
       try {
-        funds = await _mergeCollection(_fundRef, funds, normalizeFunds); saveFunds();
-        movements = _sortMovements(await _mergeCollection(_movRef, movements, normalizeMovements)); saveMovements();
+        await _fetchCloudTombstones();
+        funds = await _mergeCollection(_fundRef, funds, normalizeFunds, _tombFunds); saveFunds();
+        movements = _sortMovements(await _mergeCollection(_movRef, movements, normalizeMovements, _tombMovements)); saveMovements();
         _lastFundsFingerprint = JSON.stringify(funds);
         _lastMovementsFingerprint = JSON.stringify(movements);
         const sSnap = await _setRef().get();
@@ -2589,15 +2684,27 @@
     const MOV_SIGN  = { in: 1, loan: -1, repay: 1, out: -1, transfer: 0 };   // efecto de cada tipo sobre "Tienes"
     const PLAN_FREQ_DAYS  = { daily: 1, weekly: 7, biweekly: 14, monthly: 30 };
     const PLAN_FREQ_LABEL = { daily: 'día', weekly: 'semana', biweekly: 'quincena', monthly: 'mes' };
+    // Lista fija (no editable por el usuario) a propósito — ponytail: agregar categorías
+    // propias es una pantalla de administración entera para algo que, de momento, nadie
+    // pidió; si hace falta más adelante, se agrega ahí.
+    const OUT_CATEGORIES = ['Comida', 'Transporte', 'Salud', 'Entretenimiento', 'Hogar', 'Otro'];
     let funds = [];        // { id, name, goal, color, createdAt, goalDeadline, planAmount, planFreq }
-    let movements = [];    // { id, fundId, type, amount, date, note, dueDate, loanId, toFundId }  — más reciente primero
+    let movements = [];    // { id, fundId, type, amount, date, note, dueDate, loanId, toFundId, category }  — más reciente primero
     let PROFILE = { name: '' };
     let dashboardFundFilter = null;   // null = todos los fondos, o id de fondo
 
     // Solo AÑADE valores por defecto, nunca borra datos (backup viejo, doc corrupto en la nube).
+    // Solo dígitos/letras/guion — los ids propios son Date.now().toString() (puros
+    // dígitos); cualquier otra cosa viene de un backup manipulado a mano. Varios lugares
+    // de la app meten el id directo en un atributo HTML (data-id="..."); un id con
+    // comillas podía cerrar el atributo e inyectar HTML/JS propio — probado con un
+    // atributo inofensivo, entraba. Filtrarlo ACÁ (el único cuello de botella por el que
+    // pasan los tres orígenes de datos: localStorage, Firestore y un backup importado)
+    // cierra el hueco de raíz en vez de tener que acordarse de escapar cada atributo.
+    const _SAFE_ID = /^[a-zA-Z0-9_-]+$/;
     function normalizeFunds(arr) {
       if (!Array.isArray(arr)) return [];
-      return arr.filter(f => f && typeof f === 'object' && f.id).map(f => {
+      return arr.filter(f => f && typeof f === 'object' && f.id && _SAFE_ID.test(String(f.id))).map(f => {
         f.id = String(f.id);
         if (typeof f.name !== 'string') f.name = '';
         f.goal = Number(f.goal) || 0;
@@ -2606,12 +2713,15 @@
         if (typeof f.goalDeadline !== 'string') f.goalDeadline = '';
         f.planAmount = Number(f.planAmount) || 0;
         if (!PLAN_FREQ_DAYS[f.planFreq]) f.planFreq = '';
+        // Backups/cuentas viejas de antes de este campo: si tienen plan pero no fecha,
+        // usa createdAt como mejor estimado en vez de contar desde el año 1970.
+        if (typeof f.planSetAt !== 'string' || !f.planSetAt) f.planSetAt = f.planAmount > 0 && f.planFreq ? (f.createdAt || todayISO()) : '';
         return f;
       }).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '') || (a.id > b.id ? 1 : -1));
     }
     function normalizeMovements(arr) {
       if (!Array.isArray(arr)) return [];
-      return arr.filter(m => m && typeof m === 'object' && m.id).map(m => {
+      return arr.filter(m => m && typeof m === 'object' && m.id && _SAFE_ID.test(String(m.id))).map(m => {
         m.id = String(m.id);
         m.fundId = String(m.fundId || '');
         if (!MOV_TYPES[m.type]) m.type = 'in';
@@ -2621,6 +2731,7 @@
         if (typeof m.dueDate !== 'string') m.dueDate = '';
         m.loanId = m.type === 'repay' ? String(m.loanId || '') : '';
         m.toFundId = m.type === 'transfer' ? String(m.toFundId || '') : '';
+        m.category = m.type === 'out' && OUT_CATEGORIES.includes(m.category) ? m.category : '';
         return m;
       });
     }
@@ -2631,8 +2742,10 @@
       return arr;
     }
 
-    // Saldo de un préstamo: monto − devoluciones que le apuntan. Se calcula siempre, no se guarda.
-    // ponytail: O(n) por préstamo → fundBalance es O(n²); con miles de movimientos, indexar repays por loanId.
+    // Saldo de un préstamo: monto − devoluciones que le apuntan. Se calcula siempre, no se
+    // guarda. Sigue siendo O(n) por llamada — fundBalance ya NO la usa en su bucle (arma su
+    // propio índice, ver ahí); esta queda para los lugares que solo miran uno o pocos
+    // préstamos sueltos (tarjeta de movimiento, selector de "Devolver", PDF).
     function loanBalance(loan) {
       const repaid = round2(movements.filter(m => m.type === 'repay' && m.loanId === loan.id).reduce((s, m) => s + m.amount, 0));
       return { repaid, balance: round2(loan.amount - repaid) };
@@ -2640,6 +2753,13 @@
     function isLoanSettled(loan) { return loanBalance(loan).balance <= 0; }
     function isLoanOverdue(m, today = todayISO()) {
       return m.type === 'loan' && !!m.dueDate && m.dueDate < today && !isLoanSettled(m);
+    }
+    // Préstamo sin saldar que vence en los próximos 7 días (no vencido todavía — eso ya
+    // lo avisa isLoanOverdue). Antes solo se avisaba cuando YA había pasado la fecha.
+    function isLoanDueSoon(m, today = todayISO()) {
+      if (m.type !== 'loan' || !m.dueDate || m.dueDate < today || isLoanSettled(m)) return false;
+      const days = Math.ceil((new Date(m.dueDate + 'T12:00:00') - new Date(today + 'T12:00:00')) / 86400000);
+      return days <= 7;
     }
     // Efecto de UN movimiento sobre UNA cuenta puntual. Para todo tipo normal es el de
     // siempre (MOV_SIGN); para "transfer" depende de qué lado de la transferencia es esta
@@ -2656,6 +2776,12 @@
     // transferencia entre dos cuentas propias no cambia nada — ver MOV_SIGN.transfer)
     function fundBalance(fundId) {
       let have = 0, owed = 0;
+      // Índice de devoluciones por préstamo, armado UNA sola vez acá si hace falta — antes
+      // cada préstamo llamaba loanBalance(), que recorría TODOS los movimientos por su
+      // cuenta: con miles de movimientos y varios préstamos, terminaba en O(n²) (probado:
+      // ~200ms solo para pintar la lista de cuentas con 2,000 movimientos). Con el índice,
+      // fundBalance vuelve a ser O(n) sin importar cuántos préstamos haya.
+      let repaidByLoan = null;
       for (const m of movements) {
         if (fundId) {
           if (m.fundId !== fundId && m.toFundId !== fundId) continue;
@@ -2663,7 +2789,15 @@
         } else {
           have += MOV_SIGN[m.type] * m.amount;
         }
-        if (m.type === 'loan') owed += loanBalance(m).balance;
+        if (m.type === 'loan') {
+          if (!repaidByLoan) {
+            repaidByLoan = new Map();
+            for (const x of movements) {
+              if (x.type === 'repay' && x.loanId) repaidByLoan.set(x.loanId, round2((repaidByLoan.get(x.loanId) || 0) + x.amount));
+            }
+          }
+          owed += round2(m.amount - (repaidByLoan.get(m.id) || 0));
+        }
       }
       return { have: round2(have), owed: round2(owed) };
     }
@@ -2687,7 +2821,7 @@
     // la cuenta). null si no hay plan configurado.
     function _planPaceInfo(f) {
       if (!(f.planAmount > 0) || !f.planFreq) return null;
-      const days = Math.max(0, Math.floor((new Date(todayISO() + 'T12:00:00') - new Date((f.createdAt || todayISO()) + 'T12:00:00')) / 86400000));
+      const days = Math.max(0, Math.floor((new Date(todayISO() + 'T12:00:00') - new Date((f.planSetAt || f.createdAt || todayISO()) + 'T12:00:00')) / 86400000));
       const expected = round2(Math.floor(days / PLAN_FREQ_DAYS[f.planFreq]) * f.planAmount);
       return { expected, diff: round2(fundBalance(f.id).have - expected), freqLabel: PLAN_FREQ_LABEL[f.planFreq], amount: f.planAmount };
     }
@@ -2742,6 +2876,7 @@
       movements = movements.filter(x => !ids.includes(x.id));
       saveMovements();
       ids.forEach(_deleteMovementCloud);
+      _recordTombstones('movements', ids);
       return removed;
     }
     function addFund(f) {
@@ -2764,6 +2899,12 @@
       movements = movements.filter(m => m.fundId !== id && m.toFundId !== id);
       saveFunds(); saveMovements();
       _deleteFundCloud(id); gone.forEach(_deleteMovementCloud);
+      _recordTombstones('funds', [id]); _recordTombstones('movements', gone);
+      // Si esta cuenta estaba elegida en algún filtro, límpialo — si no, el Resumen/
+      // Movimientos seguían "filtrando" por un id que ya no existe (mostraban $0 o
+      // "sin movimientos" con el selector diciendo "Todas las cuentas").
+      if (dashboardFundFilter === id) dashboardFundFilter = null;
+      if (historyFundFilter === id) historyFundFilter = null;
     }
 
     // Chequeo mínimo de la lógica de saldos — correr en la consola del navegador: _selfCheck()
@@ -2807,6 +2948,7 @@
       try { funds = normalizeFunds(JSON.parse(localStorage.getItem('bank_funds') || '[]')); } catch (e) { console.error('bank_funds:', e); funds = []; }
       try { movements = _sortMovements(normalizeMovements(JSON.parse(localStorage.getItem('bank_movements') || '[]'))); } catch (e) { console.error('bank_movements:', e); movements = []; }
       try { PROFILE = { name: '', ...JSON.parse(localStorage.getItem('bank_profile') || '{}') }; } catch { PROFILE = { name: '' }; }
+      _loadTombstonesLocal();
     }
     // Helper to safely write to localStorage with quota error handling
     function safeSetItem(key, value) {
@@ -2850,13 +2992,14 @@
     }
 
     function formatDateDisplay(iso) {
-      // "2026-04-12" → "April 12, 2026"
+      // "2026-04-12" → "12 de abril de 2026" — toda la app está en español; esta era la
+      // única fecha que seguía saliendo en inglés (tarjetas, metas, PDF).
       if (!iso || typeof iso !== 'string') return '';
       const [y, m, d] = iso.split('-').map(Number);
       if (!y || !m || !d) return iso;   // fecha corrupta: se muestra tal cual, no "undefined NaN"
-      const months = ['January','February','March','April','May','June',
-                      'July','August','September','October','November','December'];
-      return months[m - 1] + ' ' + d + ', ' + y;
+      const months = ['enero','febrero','marzo','abril','mayo','junio',
+                      'julio','agosto','septiembre','octubre','noviembre','diciembre'];
+      return d + ' de ' + months[m - 1] + ' de ' + y;
     }
 
     // Una sola pasada en vez de 5 replace encadenados — se llama ~8 veces por tarjeta del historial
@@ -3135,9 +3278,11 @@
       const bal = isLoan ? loanBalance(m) : null;
       const settled = isLoan && bal.balance <= 0;
       const overdue = isLoan && !settled && m.dueDate && m.dueDate < today;
+      const dueSoon = isLoan && !settled && !overdue && isLoanDueSoon(m, today);
       const badge = overdue
         ? ` <span class="badge-overdue" style="display:inline-block;background:#ffebee;color:#c62828;font-size:0.7rem;font-weight:700;padding:1px 7px;border-radius:10px;vertical-align:middle;">Vencido</span>`
-        : settled ? ` <span style="display:inline-block;background:#e8f5e9;color:#2e7d32;font-size:0.7rem;font-weight:700;padding:1px 7px;border-radius:10px;vertical-align:middle;">Devuelto</span>` : '';
+        : settled ? ` <span style="display:inline-block;background:#e8f5e9;color:#2e7d32;font-size:0.7rem;font-weight:700;padding:1px 7px;border-radius:10px;vertical-align:middle;">Devuelto</span>`
+        : dueSoon ? ` <span style="display:inline-block;background:#fff3e0;color:#c0540a;font-size:0.7rem;font-weight:700;padding:1px 7px;border-radius:10px;vertical-align:middle;">Vence pronto</span>` : '';
       // positive === null → ni entrada ni salida (transferencia vista desde la lista general,
       // sin una cuenta de referencia): se muestra en neutro, sin signo +/−.
       let positive, fundLine;
@@ -3175,6 +3320,16 @@
 
     // Pinta una lista de movimientos (ya ordenada) en `el`, con separadores de mes.
     // viewFundId: se lo pasa directo a _movementCardHTML — ver ahí (null = lista general).
+    // Cuántas tarjetas mostrar de una — con miles de movimientos, crear TODAS sus tarjetas
+    // de una sola vez se sentía lento (probado: ~500ms y ~19,000 nodos de DOM con 2,000
+    // movimientos) para algo que casi nunca se ve entero en pantalla. "Ver más" reusa la
+    // MISMA lista ya ordenada/filtrada, solo pinta un pedazo más grande.
+    const MOVEMENT_PAGE_SIZE = 100;
+    let _movementListShown = MOVEMENT_PAGE_SIZE;
+    function _showMoreMovements() {
+      _movementListShown += MOVEMENT_PAGE_SIZE;
+      _refreshCurrentView();
+    }
     function _renderMovementList(list, el, emptyHTML, viewFundId = null) {
       if (list.length === 0) { el.innerHTML = `<div class="empty-state">${emptyHTML}</div>`; _animateListEntrance = false; return; }
       const showMonthSeparators = historySortMode === 'date';
@@ -3182,7 +3337,8 @@
       let lastMonthKey = null, idx = 0;
       const parts = [];
       const today = todayISO();
-      for (const m of list) {
+      const visible = list.slice(0, _movementListShown);
+      for (const m of visible) {
         const d = new Date(m.date + 'T12:00:00');
         const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
         if (showMonthSeparators && monthKey !== lastMonthKey && !isNaN(d)) {
@@ -3190,6 +3346,9 @@
           parts.push(`<div class="month-separator"${_animateListEntrance ? '' : ' style="animation:none;"'}>${MONTHS[d.getMonth()]} ${d.getFullYear()}</div>`);
         }
         parts.push(_movementCardHTML(m, today, { animate: _animateListEntrance, delay: Math.min(idx++, 7) * 30, viewFundId }));
+      }
+      if (list.length > visible.length) {
+        parts.push(`<button class="btn btn-ghost" style="width:100%;margin-top:6px;" onclick="_showMoreMovements()">Ver más (quedan ${list.length - visible.length})</button>`);
       }
       el.innerHTML = parts.join('');
       _animateListEntrance = false;
@@ -3243,6 +3402,7 @@
         return;
       }
       restored.forEach(_syncMovement);
+      _clearTombstones('movements', restored.map(r => r.id));
       _refreshCurrentView();
       showToast('Movimiento restaurado', 'success');
     }
@@ -3254,10 +3414,13 @@
       const { have, owed } = fundBalance(f.id);
       const pct = f.goal > 0 ? Math.max(0, Math.min(100, have / f.goal * 100)) : 0;
       const accent = escapeHTML(f.color || '#5b8fa8');
+      const id = escapeHTML(f.id);   // normalizeFunds ya solo deja pasar ids "seguros", pero
+                                      // escapar acá también es gratis y no depende de acordarse.
+      const goalReached = f.goal > 0 && have >= f.goal;
       return `
-        <div class="mov-card fund-card" data-card-id="${f.id}" style="${animate ? `animation-delay:${delay}ms;` : 'animation:none;'}border-left:4px solid ${accent};">
-          <div class="mov-card-info" data-action="fund-open" data-id="${f.id}" style="cursor:pointer;">
-            <div class="mov-card-num">${escapeHTML(f.name)}</div>
+        <div class="mov-card fund-card" data-card-id="${id}" style="${animate ? `animation-delay:${delay}ms;` : 'animation:none;'}border-left:4px solid ${accent};">
+          <div class="mov-card-info" data-action="fund-open" data-id="${id}" style="cursor:pointer;">
+            <div class="mov-card-num">${escapeHTML(f.name)}${goalReached ? ` <span style="display:inline-block;background:#e8f5e9;color:#2e7d32;font-size:0.7rem;font-weight:700;padding:1px 7px;border-radius:10px;vertical-align:middle;">Meta cumplida</span>` : ''}</div>
             <div class="mov-card-client" style="color:#2e7d32;">Tienes ${formatMoney(have)}</div>
             ${owed > 0 ? `<div class="badge-pulse" style="color:#c0540a;font-size:0.8rem;font-weight:600;margin-top:2px;">Debes ${formatMoney(owed)}</div>` : ''}
             ${f.goal > 0 ? `<div class="goal-bar"><span style="width:${pct.toFixed(1)}%;background:${accent};"></span></div>
@@ -3265,7 +3428,7 @@
           </div>
           <div class="mov-card-actions">
             <div class="overflow-wrap">
-              <button class="btn btn-ghost btn-sm overflow-trigger" data-kind="fund" data-id="${f.id}" aria-label="Más acciones" aria-haspopup="true" style="padding:6px 10px;font-size:1.1rem;line-height:1;">⋮</button>
+              <button class="btn btn-ghost btn-sm overflow-trigger" data-kind="fund" data-id="${id}" aria-label="Más acciones" aria-haspopup="true" style="padding:6px 10px;font-size:1.1rem;line-height:1;">⋮</button>
             </div>
           </div>
         </div>`;
@@ -3296,6 +3459,7 @@
     function openFundPage(id, triggerEl) {
       if (!fundById(id)) return;
       _openFundId = id;
+      _movementListShown = MOVEMENT_PAGE_SIZE;
       const src = _snapTrigger(triggerEl);   // medir ANTES de esconder la lista (después mediría 0x0)
       document.getElementById('funds-list-page').style.display = 'none';
       const page = document.getElementById('fund-page');
@@ -3338,7 +3502,10 @@
         ? `<div class="badge-pulse" style="color:#c0540a;font-size:0.85rem;font-weight:600;margin:2px 0 10px;">La meta venció el ${formatDateDisplay(f.goalDeadline)} — todavía te faltan ${formatMoney(pace.remaining)}</div>`
         : `<div style="font-size:0.85rem;color:var(--text-light);margin:2px 0 10px;">Te faltan ${formatMoney(pace.remaining)} para el ${formatDateDisplay(f.goalDeadline)} — unos ${formatMoney(pace.monthly)} por mes (${formatMoney(pace.weekly)} por semana)</div>`;
       const plan = _planPaceInfo(f);
-      const planHTML = !plan ? '' : `<div style="font-size:0.85rem;font-weight:600;color:${plan.diff >= 0 ? '#2e7d32' : '#c0540a'};margin:2px 0 10px;">Plan: ${formatMoney(plan.amount)} cada ${plan.freqLabel} — vas ${plan.diff >= 0 ? formatMoney(plan.diff) + ' adelantado' : formatMoney(Math.abs(plan.diff)) + ' atrasado'}</div>`;
+      const planHTML = !plan ? '' : `<div style="font-size:0.85rem;font-weight:600;color:${plan.diff >= 0 ? '#2e7d32' : '#c0540a'};margin:2px 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span>Plan: ${formatMoney(plan.amount)} cada ${plan.freqLabel} — vas ${plan.diff >= 0 ? formatMoney(plan.diff) + ' adelantado' : formatMoney(Math.abs(plan.diff)) + ' atrasado'}</span>
+        <button class="btn btn-ghost btn-sm" onclick="quickPlanDeposit('${escapeHTML(f.id)}', this)" style="font-weight:600;">Registrar ahorro del plan</button>
+      </div>`;
       document.getElementById('fund-page-title').textContent = f.name;
       document.getElementById('fund-page-menu-btn').dataset.id = f.id;
       // Transferencias: esta cuenta puede ser origen (fundId) O destino (toFundId) — ambas
@@ -3364,6 +3531,8 @@
     function openFundModal(id, triggerEl) {
       const f = id ? fundById(id) : null;
       _fundModalId = f ? f.id : null;
+      const saveBtn = document.getElementById('save-fund-btn');
+      if (saveBtn) saveBtn.disabled = false;
       document.getElementById('fund-modal-title').textContent = f ? 'Editar cuenta' : 'Nueva cuenta';
       document.getElementById('fund-name').value = f?.name || '';
       document.getElementById('fund-goal').value = f?.goal ? f.goal : '';
@@ -3381,30 +3550,58 @@
       _shrinkModalToRect(overlay.querySelector('.modal'), () => overlay.classList.remove('open'));
       _fundModalId = null;
     }
+    // ponytail: bandera simple, no cola — dos toques rápidos en "Guardar" antes creaban
+    // dos cuentas (o editaban dos veces) porque el modal tarda unos ms en cerrarse y el
+    // botón seguía respondiendo mientras tanto.
+    // Deshabilita el botón de verdad (no solo una bandera) — saveFundModal es síncrona de
+    // punta a punta, así que una bandera que se prende y apaga dentro de la misma llamada
+    // ya estaba de vuelta en `false` antes de que el SEGUNDO toque real (un evento de clic
+    // aparte, no la misma llamada) llegara a dispararla. Deshabilitar el <button> sí evita
+    // que ese segundo clic dispare nada, porque un botón disabled no genera evento 'click'.
     function saveFundModal() {
+      const btn = document.getElementById('save-fund-btn');
+      if (btn && btn.disabled) return;
       const name = document.getElementById('fund-name').value.trim();
       if (!name) { showToast('Ponle un nombre a la cuenta', 'error'); return; }
-      const goal = round2(document.getElementById('fund-goal').value);
-      const goalDeadline = document.getElementById('fund-deadline').value || '';
-      const planAmount = round2(document.getElementById('fund-plan-amount').value);
-      const planFreq = document.getElementById('fund-plan-freq').value || '';
-      const color = document.getElementById('fund-color').value || '';
-      // Si editas la meta (p.ej. la bajas) y con lo que ya tienes ahora te alcanza, también
-      // cuenta como "llegaste" — no solo al meter/devolver dinero (ver _checkGoalReached).
-      const prevFund = _fundModalId ? fundById(_fundModalId) : null;
-      const prevReached = !!prevFund && prevFund.goal > 0 && fundBalance(prevFund.id).have >= prevFund.goal;
-      if (_fundModalId) {
-        updateFund(_fundModalId, { name, goal, goalDeadline, planAmount, planFreq, color });
-        showToast('Cuenta actualizada', 'success');
-        const nowReached = goal > 0 && fundBalance(_fundModalId).have >= goal;
-        if (!prevReached && nowReached) showToast(`¡Llegaste a tu meta de ${name}!`, 'success', { duration: 6000 });
-      } else {
-        if (!addFund({ name, goal, goalDeadline, planAmount, planFreq, color })) { showToast('No se pudo guardar (almacenamiento lleno)', 'error'); return; }
-        showToast('Cuenta creada', 'success');
+      if (btn) btn.disabled = true;
+      try {
+        const goal = round2(document.getElementById('fund-goal').value);
+        const goalDeadline = document.getElementById('fund-deadline').value || '';
+        const planAmount = round2(document.getElementById('fund-plan-amount').value);
+        const planFreq = document.getElementById('fund-plan-freq').value || '';
+        const color = document.getElementById('fund-color').value || '';
+        // Si editas la meta (p.ej. la bajas) y con lo que ya tienes ahora te alcanza, también
+        // cuenta como "llegaste" — no solo al meter/devolver dinero (ver _checkGoalReached).
+        const prevFund = _fundModalId ? fundById(_fundModalId) : null;
+        const prevReached = !!prevFund && prevFund.goal > 0 && fundBalance(prevFund.id).have >= prevFund.goal;
+        // El plan "empieza a contar" desde que se pone o se cambia, no desde que se creó
+        // la cuenta (ver _planPaceInfo) — si no cambió, conserva la fecha que ya tenía.
+        const planChanged = !prevFund || prevFund.planAmount !== planAmount || prevFund.planFreq !== planFreq;
+        const planSetAt = !planChanged ? (prevFund ? prevFund.planSetAt : '') : (planAmount > 0 && planFreq ? todayISO() : '');
+        if (_fundModalId) {
+          updateFund(_fundModalId, { name, goal, goalDeadline, planAmount, planFreq, planSetAt, color });
+          showToast('Cuenta actualizada', 'success');
+          const nowReached = goal > 0 && fundBalance(_fundModalId).have >= goal;
+          if (!prevReached && nowReached) showToast(`¡Llegaste a tu meta de ${name}!`, 'success', { duration: 6000 });
+        } else {
+          if (!addFund({ name, goal, goalDeadline, planAmount, planFreq, planSetAt, color })) {
+            showToast('No se pudo guardar (almacenamiento lleno)', 'error');
+            if (btn) btn.disabled = false;   // falló — reactiva para que pueda reintentar
+            return;
+          }
+          showToast('Cuenta creada', 'success');
+        }
+        closeFundModal();
+        _refreshCurrentView();
+        if (document.getElementById('view-create').style.display === 'block') renderCreateForm();
+        // Sin `finally`: si llegó hasta acá, guardó bien y el modal se está cerrando — el
+        // botón se reactiva solo la próxima vez que openFundModal() lo abra de nuevo. Si
+        // se reactivara ACÁ, un tercer toque durante la animación de cierre podría alcanzar
+        // a crear/editar otra vez con el formulario ya viejo.
+      } catch (e) {
+        if (btn) btn.disabled = false;
+        throw e;
       }
-      closeFundModal();
-      _refreshCurrentView();
-      if (document.getElementById('view-create').style.display === 'block') renderCreateForm();
     }
     async function confirmDeleteFund(id, triggerEl) {
       const f = fundById(id);
@@ -3434,6 +3631,7 @@
 
     function setSortMode(mode) {
       historySortMode = mode;
+      _movementListShown = MOVEMENT_PAGE_SIZE;
       document.querySelectorAll('#schip-date, #schip-amount-desc, #schip-amount-asc').forEach(b => { b.className = 'filter-chip'; });
       const chip = document.getElementById('schip-' + mode);
       if (chip) chip.className = 'filter-chip active';
@@ -3449,6 +3647,7 @@
     }
     function setTypeFilter(t) {
       historyTypeFilter = t;
+      _movementListShown = MOVEMENT_PAGE_SIZE;
       document.querySelectorAll('.status-chip').forEach(b => { b.className = 'filter-chip status-chip'; });
       const chip = document.getElementById('fchip-' + t);
       if (chip) chip.className = 'filter-chip status-chip ' + (t === 'overdue' || t === 'loan' || t === 'out' ? 'active-pending' : 'active');
@@ -3456,6 +3655,7 @@
     }
     function setYearFilter(year) {
       historyYearFilter = historyYearFilter === year ? null : year;
+      _movementListShown = MOVEMENT_PAGE_SIZE;
       document.querySelectorAll('.year-chip').forEach(b => {
         b.className = 'filter-chip year-chip' + (b.dataset.year === historyYearFilter ? ' active-year' : '');
       });
@@ -3475,6 +3675,7 @@
     }
     function setFundFilter(id) {
       historyFundFilter = historyFundFilter === id ? null : id;
+      _movementListShown = MOVEMENT_PAGE_SIZE;
       document.querySelectorAll('.fund-chip').forEach(b => {
         b.className = 'filter-chip fund-chip' + (b.dataset.fund === historyFundFilter ? ' active-year' : '');
       });
@@ -3533,6 +3734,7 @@
     // todo el historial (antes se reconstruía el DOM completo en cada tecla).
     let _searchDebounce = null;
     function debouncedFilterMovements() {
+      _movementListShown = MOVEMENT_PAGE_SIZE;
       clearTimeout(_searchDebounce);
       _searchDebounce = setTimeout(filterMovements, 150);
     }
@@ -3564,7 +3766,7 @@
 
     // ── Formulario de movimiento ──
     let editingMovementId = null;   // null = crear, id = editar
-    let formType = 'in', formFundId = '', formAmount = '', formDate = '', formNote = '', formDueDate = '', formLoanId = '', formToFundId = '';
+    let formType = 'in', formFundId = '', formAmount = '', formDate = '', formNote = '', formDueDate = '', formLoanId = '', formToFundId = '', formCategory = '';
     let hasUnsavedChanges = false;
 
     function setUnsavedChanges(value) {
@@ -3625,6 +3827,12 @@
           <select id="mf-tofund" onchange="formToFundId=this.value;_formChanged();">
             ${otherFunds.map(f => `<option value="${f.id}"${f.id === formToFundId ? ' selected' : ''}>${escapeHTML(f.name)}</option>`).join('')}
           </select>` : ''}
+          ${formType === 'out' ? `
+          <label>Categoría (opcional)</label>
+          <select id="mf-category" onchange="formCategory=this.value;_formChanged();">
+            <option value="">Sin categoría</option>
+            ${OUT_CATEGORIES.map(c => `<option value="${c}"${c === formCategory ? ' selected' : ''}>${c}</option>`).join('')}
+          </select>` : ''}
           <label>Nota (opcional)</label>
           <input id="mf-note" type="text" placeholder="Ej: boletos de avión" value="${escapeHTML(formNote)}" oninput="formNote=this.value;_formChanged();">
         </div>`;
@@ -3659,7 +3867,8 @@
         note: (formNote || '').trim(),
         dueDate: formType === 'loan' ? (formDueDate || '') : '',
         loanId: formType === 'repay' ? formLoanId : '',
-        toFundId: formType === 'transfer' ? formToFundId : ''
+        toFundId: formType === 'transfer' ? formToFundId : '',
+        category: formType === 'out' ? formCategory : ''
       };
     }
 
@@ -3674,7 +3883,15 @@
       }
     }
 
+    // ponytail: misma bandera simple que _savingFund — un doble toque en "Guardar"
+    // (la vista tarda unos ms en cerrarse) guardaba el mismo movimiento dos veces.
+    // Mismo motivo que saveFundModal (ver ahí): deshabilitar el <button> de verdad, no una
+    // bandera — la función es síncrona, así que una bandera ya estaba en `false` de nuevo
+    // antes de que un SEGUNDO clic real (evento aparte) pudiera encontrarla en `true`.
     function saveCurrentMovement(triggerEl) {
+      const btn = document.getElementById('save-mov-btn');
+      if (btn && btn.disabled) return;
+      if (btn) btn.disabled = true;
       try {
         const m = buildMovementObject();
         // Una transferencia afecta DOS cuentas (le resta a una, le suma a la otra) — cualquiera
@@ -3691,24 +3908,44 @@
           ok = addMovement(m);
           if (ok) showToast('Movimiento guardado', 'success');
         }
-        if (!ok) { showToast('No se pudo guardar (almacenamiento lleno). Tus cambios siguen en el formulario.', 'error'); return; }
+        if (!ok) {
+          showToast('No se pudo guardar (almacenamiento lleno). Tus cambios siguen en el formulario.', 'error');
+          if (btn) btn.disabled = false;
+          return;
+        }
         affectedFundIds.forEach(id => _checkGoalReached(id, beforeHave[id]));
         closeCreate(triggerEl);
+        // Sin reactivar el botón acá a propósito (ver el mismo comentario en saveFundModal):
+        // se reactiva solo la próxima vez que openCreate/editMovement/openRepayFor abran
+        // el formulario de nuevo.
       } catch (e) {
         showToast('Error al guardar: ' + e.message, 'error');
+        if (btn) btn.disabled = false;
       }
     }
 
     // presetFundId: viene del botón "+ Nuevo movimiento" de la página de un fondo — deja ese fondo elegido.
     function openCreate(triggerEl, presetFundId) {
+      const saveBtn = document.getElementById('save-mov-btn');
+      if (saveBtn) saveBtn.disabled = false;
       editingMovementId = null;
       formType = 'in';
       formFundId = presetFundId || (typeof historyFundFilter !== 'undefined' && historyFundFilter) || formFundId || '';
-      formAmount = ''; formDate = todayISO(); formNote = ''; formDueDate = ''; formLoanId = ''; formToFundId = '';
+      formAmount = ''; formDate = todayISO(); formNote = ''; formDueDate = ''; formLoanId = ''; formToFundId = ''; formCategory = '';
       setUnsavedChanges(false);
       renderCreateForm();
       showView('create', triggerEl);
       saveDraft();
+    }
+    // Atajo "Registrar ahorro del plan" (página de la cuenta): abre el form ya en Meter
+    // con el monto del plan precargado — se puede ajustar antes de guardar, como cualquier
+    // otro movimiento.
+    function quickPlanDeposit(fundId, triggerEl) {
+      const f = fundById(fundId);
+      if (!f || !(f.planAmount > 0) || !f.planFreq) return;
+      openCreate(triggerEl, fundId);
+      formType = 'in'; formAmount = String(f.planAmount);
+      renderCreateForm(); saveDraft();
     }
     // Atajo "Devolver" desde un préstamo: abre el form ya en Devolver apuntando a ese préstamo,
     // con el saldo completo precargado (se puede bajar para devolver una parte).
@@ -3722,9 +3959,11 @@
     function editMovement(id, triggerEl) {
       const m = movements.find(x => x.id === id);
       if (!m) return;
+      const saveBtn = document.getElementById('save-mov-btn');
+      if (saveBtn) saveBtn.disabled = false;
       editingMovementId = id;
       formType = m.type; formFundId = m.fundId; formAmount = String(m.amount); formDate = m.date;
-      formNote = m.note || ''; formDueDate = m.dueDate || ''; formLoanId = m.loanId || ''; formToFundId = m.toFundId || '';
+      formNote = m.note || ''; formDueDate = m.dueDate || ''; formLoanId = m.loanId || ''; formToFundId = m.toFundId || ''; formCategory = m.category || '';
       setUnsavedChanges(false);
       renderCreateForm();
       showView('create', triggerEl);
@@ -3752,7 +3991,7 @@
     function _saveDraftNow() {
       _draftTimer = null;
       try {
-        sessionStorage.setItem('bank_draft', JSON.stringify({ editingMovementId, formType, formFundId, formAmount, formDate, formNote, formDueDate, formLoanId, formToFundId }));
+        sessionStorage.setItem('bank_draft', JSON.stringify({ editingMovementId, formType, formFundId, formAmount, formDate, formNote, formDueDate, formLoanId, formToFundId, formCategory }));
       } catch (e) { console.warn('Could not save draft:', e); }
     }
     function loadDraft() {
@@ -3768,6 +4007,7 @@
         formDueDate = d.formDueDate || '';
         formLoanId = d.formLoanId || '';
         formToFundId = d.formToFundId || '';
+        formCategory = d.formCategory || '';
         return true;
       } catch (e) { console.warn('Could not load draft:', e); return false; }
     }
@@ -3907,7 +4147,14 @@
     let _resizeRaf = null;
     window.addEventListener('resize', () => {
       if (_resizeRaf) return;
-      _resizeRaf = requestAnimationFrame(() => { _resizeRaf = null; _bnLensReady = false; positionBnLens(); });
+      _resizeRaf = requestAnimationFrame(() => {
+        _resizeRaf = null; _bnLensReady = false; positionBnLens();
+        // Los <canvas> de las gráficas se dibujan a un ancho fijo (setupCanvas mide
+        // canvas.offsetWidth UNA vez) — sin esto, girar el teléfono los dejaba con el
+        // ancho viejo estirado sobre el nuevo layout (borroso, y a veces recortado).
+        if (document.getElementById('view-dashboard')?.style.display === 'block') renderDashboard();
+        else if (_openFundId && document.getElementById('fund-page')?.style.display === 'block') renderFundPage();
+      });
     });
 
     function switchTab(tab) {
@@ -3942,6 +4189,7 @@
         if (_openFundId) renderFundPage(); else renderFunds();
       } else if (tab === 'history') {
         clearDraft();
+        _movementListShown = MOVEMENT_PAGE_SIZE;
         buildYearChips();
         buildFundChips();
         filterMovements();
@@ -4000,6 +4248,16 @@
       }
       t.net = round2(t.in + t.repay - t.loan - t.out);
       return t;
+    }
+    // En qué se fue el dinero (solo "Gastar") dentro del período — [[categoría, monto]],
+    // de mayor a menor. "Sin categoría" agrupa lo que se registró sin elegir una.
+    function _spendingByCategory(list) {
+      const map = {};
+      list.filter(m => m.type === 'out').forEach(m => {
+        const cat = m.category || 'Sin categoría';
+        map[cat] = round2((map[cat] || 0) + m.amount);
+      });
+      return Object.entries(map).sort((a, b) => b[1] - a[1]);
     }
     // Saldo ("Tienes") al cierre de cada mes/día del período — mismo formato que consume
     // drawBarChart/drawLineChart: [{ month|day, sortKey, revenue }].
@@ -4081,6 +4339,7 @@
       // que `totals`, que tampoco filtra por período. mt.overdueCount sí filtra por período (viene
       // de `list`), así que usarlo acá podía mostrar "Debes $500 · nada vencido" con un período corto.
       const overdueCount = movements.filter(m => (!dashboardFundFilter || m.fundId === dashboardFundFilter) && isLoanOverdue(m)).length;
+      const spendCats = _spendingByCategory(list);
       const chartData = getBalanceByPeriod(list);
       const el = document.getElementById('dashboard-content');
       const customInputsHTML = dashboardPeriod === 'custom' ? `
@@ -4139,6 +4398,8 @@
               <div class="metric-box"><div class="metric-label">Gastaste</div><div class="metric-value">${formatMoney(mt.out)}</div></div>
             </div>
           </div>
+
+          ${spendCats.length ? `<div class="dashboard-card" style="grid-column:1 / -1;"><h3>En qué gastaste</h3><table class="items-table"><thead><tr><th>Categoría</th><th style="text-align:right;">Monto</th></tr></thead><tbody>${spendCats.map(([cat, amt]) => `<tr><td>${escapeHTML(cat)}</td><td style="text-align:right;">${formatMoney(amt)}</td></tr>`).join('')}</tbody></table></div>` : ''}
 
           ${!dashboardFundFilter && funds.length > 1 ? `<div class="dashboard-card" style="grid-column:1 / -1;"><h3>Por cuenta</h3>${_fundsTableHTML()}</div>` : ''}
 
@@ -4204,18 +4465,33 @@
       return { max: niceMax, step };
     }
 
+    // Igual que niceScale, pero para un rango que puede bajar de 0 (una cuenta que quedó
+    // sobregirada) — antes las gráficas solo conocían un "arriba", así que una línea con
+    // tramos negativos se salía del recuadro por abajo y tapaba las etiquetas del eje.
+    function niceScaleRange(rawMax, rawMin, tickCount) {
+      const magnitude = Math.max(rawMax, -rawMin, 1);
+      const { step } = niceScale(magnitude, tickCount);
+      const yMax = Math.ceil(rawMax / step) * step;
+      const yMin = rawMin < 0 ? -Math.ceil(-rawMin / step) * step : 0;
+      return { yMax, yMin, step };
+    }
+
     function formatAxisMoney(v, step) {
+      const sign = v < 0 ? '-' : '';
+      const av = Math.abs(v);
       if (step >= 1000) {
-        const k = v / 1000;
-        return '$' + (Math.abs(k - Math.round(k)) < 0.05 ? k.toFixed(0) : k.toFixed(1)) + 'k';
+        const k = av / 1000;
+        return sign + '$' + (Math.abs(k - Math.round(k)) < 0.05 ? k.toFixed(0) : k.toFixed(1)) + 'k';
       }
-      return '$' + Math.round(v).toLocaleString('en-US');
+      return sign + '$' + Math.round(av).toLocaleString('en-US');
     }
 
     function formatBarValue(v) {
-      if (v >= 100000) return '$' + (v / 1000).toFixed(0) + 'k';
-      if (v >= 10000)  return '$' + (v / 1000).toFixed(1) + 'k';
-      return '$' + Math.round(v).toLocaleString('en-US');
+      const sign = v < 0 ? '-' : '';
+      const av = Math.abs(v);
+      if (av >= 100000) return sign + '$' + (av / 1000).toFixed(0) + 'k';
+      if (av >= 10000)  return sign + '$' + (av / 1000).toFixed(1) + 'k';
+      return sign + '$' + Math.round(av).toLocaleString('en-US');
     }
 
     function drawRoundedTopRect(ctx, x, y, w, h, r, strokeStyle) {
@@ -4279,8 +4555,11 @@
 
       const colors = _chartColors();
       const rawMax = Math.max(...data.map(d => d.revenue), 0);
-      const { max: yMax, step } = niceScale(rawMax || 1, 5);
-      const tickCount = Math.round(yMax / step);
+      const rawMin = Math.min(...data.map(d => d.revenue), 0);
+      const { yMax, yMin, step } = niceScaleRange(rawMax, rawMin, 5);
+      const range = (yMax - yMin) || 1;
+      const tickCount = Math.round(range / step);
+      const yAt = v => padding.top + chartHeight - ((v - yMin) / range) * chartHeight;
       const slot = chartWidth / data.length;
       const barWidth = Math.min(slot * 0.5, 46);
       const showValue = data.length <= 24;
@@ -4295,14 +4574,26 @@
         ctx.lineTo(width - padding.right, y + 0.5);
         ctx.stroke();
       }
+      // Línea de cero más marcada — solo hace falta cuando hay tramos negativos (si no,
+      // ya coincide con el piso del gráfico, que no necesita resaltarse aparte).
+      if (yMin < 0) {
+        ctx.strokeStyle = colors.axisText;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, yAt(0) + 0.5);
+        ctx.lineTo(width - padding.right, yAt(0) + 0.5);
+        ctx.stroke();
+      }
 
-      // Bars with vertical gradient
+      // Bars with vertical gradient — nacen en la línea de cero, no en el piso del
+      // gráfico, así un valor negativo baja en vez de dibujarse hacia arriba invertido.
       data.forEach((d, i) => {
-        const barHeight = (d.revenue / yMax) * chartHeight;
+        const zeroY = yAt(0), valY = yAt(d.revenue);
+        const barTop = Math.min(zeroY, valY);
+        const barHeight = Math.abs(valY - zeroY);
         const x = padding.left + i * slot + (slot - barWidth) / 2;
-        const y = padding.top + chartHeight - barHeight;
         // Barra con material glass (igual que la barra de navegación de la app)
-        const grad = ctx.createLinearGradient(0, y, 0, y + barHeight);
+        const grad = ctx.createLinearGradient(0, barTop, 0, barTop + barHeight);
         grad.addColorStop(0, 'rgba(255,255,255,.74)');
         grad.addColorStop(1, 'rgba(255,255,255,.36)');
         ctx.save();
@@ -4310,15 +4601,15 @@
         ctx.shadowBlur = 10;
         ctx.shadowOffsetY = 3;
         ctx.fillStyle = grad;
-        drawRoundedTopRect(ctx, x, y, barWidth, barHeight, 14, 'rgba(255,255,255,.9)');
+        drawRoundedTopRect(ctx, x, barTop, barWidth, barHeight, 14, 'rgba(255,255,255,.9)');
         ctx.restore();
 
-        if (showValue && d.revenue > 0) {
+        if (showValue && d.revenue !== 0) {
           ctx.fillStyle = colors.valueText;
           ctx.font = '600 11px "DM Sans", system-ui, sans-serif';
           ctx.textAlign = 'center';
-          ctx.textBaseline = 'alphabetic';
-          ctx.fillText(formatBarValue(d.revenue), x + barWidth / 2, y - 6);
+          ctx.textBaseline = d.revenue > 0 ? 'alphabetic' : 'top';
+          ctx.fillText(formatBarValue(d.revenue), x + barWidth / 2, d.revenue > 0 ? barTop - 6 : barTop + barHeight + 6);
         }
       });
 
@@ -4339,7 +4630,7 @@
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
       for (let i = 0; i <= tickCount; i++) {
-        const value = step * i;
+        const value = yMin + step * i;
         const y = padding.top + chartHeight - (chartHeight / tickCount) * i;
         ctx.fillText(formatAxisMoney(value, step), padding.left - 10, y);
       }
@@ -4363,15 +4654,17 @@
 
       const colors = _chartColors();
       const rawMax = Math.max(...data.map(d => d.revenue), 0);
-      const { max: yMax, step } = niceScale(rawMax || 1, 5);
-      const tickCount = Math.round(yMax / step);
+      const rawMin = Math.min(...data.map(d => d.revenue), 0);
+      const { yMax, yMin, step } = niceScaleRange(rawMax, rawMin, 5);
+      const range = (yMax - yMin) || 1;
+      const tickCount = Math.round(range / step);
       const pointSpacing = data.length > 1
         ? chartWidth / (data.length - 1)
         : 0;
       const xAt = (i) => data.length > 1
         ? padding.left + i * pointSpacing
         : padding.left + chartWidth / 2;
-      const yAt = (v) => padding.top + chartHeight - (v / yMax) * chartHeight;
+      const yAt = (v) => padding.top + chartHeight - ((v - yMin) / range) * chartHeight;
       const showValue = data.length <= 16;
 
       // Horizontal grid
@@ -4384,17 +4677,29 @@
         ctx.lineTo(width - padding.right, y + 0.5);
         ctx.stroke();
       }
+      // Línea de cero — solo si hay tramos negativos (ver mismo bloque en drawBarChart)
+      if (yMin < 0) {
+        ctx.strokeStyle = colors.axisText;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, yAt(0) + 0.5);
+        ctx.lineTo(width - padding.right, yAt(0) + 0.5);
+        ctx.stroke();
+      }
 
-      // Area fill under line
+      // Area fill under line — contra la línea de CERO, no el piso del gráfico: con
+      // saldo negativo, "el área" tiene que quedar entre la línea y el cero, no
+      // estirarse hasta abajo de todo (que ahora puede ser mucho más abajo que cero).
       if (data.length > 1) {
+        const zeroY = yAt(0);
         const areaGrad = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartHeight);
         areaGrad.addColorStop(0, 'rgba(255, 255, 255, 0.5)');
         areaGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
         ctx.fillStyle = areaGrad;
         ctx.beginPath();
-        ctx.moveTo(xAt(0), padding.top + chartHeight);
+        ctx.moveTo(xAt(0), zeroY);
         data.forEach((d, i) => ctx.lineTo(xAt(i), yAt(d.revenue)));
-        ctx.lineTo(xAt(data.length - 1), padding.top + chartHeight);
+        ctx.lineTo(xAt(data.length - 1), zeroY);
         ctx.closePath();
         ctx.fill();
       }
@@ -4434,12 +4739,12 @@
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
-        if (showValue && d.revenue > 0) {
+        if (showValue && d.revenue !== 0) {
           ctx.fillStyle = colors.valueText;
           ctx.font = '600 11px "DM Sans", system-ui, sans-serif';
           ctx.textAlign = 'center';
-          ctx.textBaseline = 'alphabetic';
-          ctx.fillText(formatBarValue(d.revenue), x, y - 10);
+          ctx.textBaseline = d.revenue > 0 ? 'alphabetic' : 'top';
+          ctx.fillText(formatBarValue(d.revenue), x, d.revenue > 0 ? y - 10 : y + 14);
         }
       });
 
@@ -4459,7 +4764,7 @@
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
       for (let i = 0; i <= tickCount; i++) {
-        const value = step * i;
+        const value = yMin + step * i;
         const y = padding.top + chartHeight - (chartHeight / tickCount) * i;
         ctx.fillText(formatAxisMoney(value, step), padding.left - 10, y);
       }
@@ -4474,7 +4779,10 @@
       } else if (dashboardPeriod === 'months12') {
         return {
           startDate: new Date(now.getFullYear(), now.getMonth() - 11, 1),
-          endDate: new Date(now.getFullYear(), now.getMonth() + 1, 0),
+          // Día 0 del mes siguiente = último día del mes actual, pero a medianoche — un
+          // movimiento de ESE día (comparado a mediodía, ver getBalanceByPeriod) quedaba
+          // FUERA del rango por unas horas. 23:59:59.999 lo deja adentro de verdad.
+          endDate: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999),
           groupByMonth: true
         };
       } else if (dashboardPeriod === 'days30') {
@@ -4493,6 +4801,7 @@
     }
 
     function validateDate(dateStr) {
+      if (!dateStr) return { valid: false, error: 'Elige una fecha.' };
       const [year, month, day] = dateStr.split('-').map(Number);
       const date = new Date(year, month - 1, day);
       const today = new Date();
@@ -4522,6 +4831,11 @@
       _pdfLoadPromise = new Promise((resolve, reject) => {
         const s = document.createElement('script');
         s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        // Verifica que el archivo que llegó es EXACTO al que cdnjs publicó para esta
+        // versión (hash tomado de la propia API de cdnjs) — sin esto, si alguien
+        // pudiera manipular esa descarga de camino, el navegador la ejecutaría igual.
+        s.integrity = 'sha512-qZvrmS2ekKPF2mSznTQsxqPgnpkI4DNTlrdUmTzrDgektczlKNRRhy5X5AAOnx5S09ydFYWWNSfcEqDTTHgtNA==';
+        s.crossOrigin = 'anonymous';
         s.onload = () => resolve();
         s.onerror = () => { _pdfLoadPromise = null; reject(new Error('No se pudo cargar jsPDF')); };
         document.head.appendChild(s);
@@ -5244,33 +5558,37 @@
     }, { capture: true, passive: true });
 
     // ── Micro-interacciones (adaptadas de Fit-M): ripple + rebote en botones grandes ──
-    // Se saltan del todo con reduce-motion, en vez de solo desactivar la animación por
-    // CSS — así nunca se crea un <span> de ripple que dependa de 'animationend' (que no
-    // dispararía con animation:none) para borrarse solo.
-    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      // Ripple — fase de captura para no perderse botones con stopPropagation en su onclick
-      document.addEventListener('click', function(e) {
-        const btn = e.target.closest('.btn-primary,.btn-success,.btn-danger,.btn-pending');
-        if (!btn) return;
-        const r = btn.getBoundingClientRect();
-        const d = Math.max(r.width, r.height) * 2;
-        const span = document.createElement('span');
-        span.className = 'ui-ripple';
-        span.style.cssText = `width:${d}px;height:${d}px;left:${e.clientX - r.left - d / 2}px;top:${e.clientY - r.top - d / 2}px`;
-        btn.appendChild(span);
-        span.addEventListener('animationend', () => span.remove());
-      }, true);
+    // El chequeo de reduce-motion vive DENTRO de cada handler (_prefersReducedMotion,
+    // no matchMedia directo) y se evalúa en CADA clic, no una sola vez al cargar la
+    // página — antes, activar "Menos efectos" en Ajustes a mitad de sesión no desactivaba
+    // nada acá (el listener ya había decidido "sí crear ripples" al arrancar): el CSS de
+    // body.lite sí le ponía animation:none al span/botón, pero entonces 'animationend'
+    // nunca llegaba y el span de ripple (o la clase .btn-bounce) se quedaba pegado para
+    // siempre — cada botón tocado con batería baja dejaba una fuga chica.
+    // Ripple — fase de captura para no perderse botones con stopPropagation en su onclick
+    document.addEventListener('click', function(e) {
+      if (_prefersReducedMotion()) return;
+      const btn = e.target.closest('.btn-primary,.btn-success,.btn-danger,.btn-pending');
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      const d = Math.max(r.width, r.height) * 2;
+      const span = document.createElement('span');
+      span.className = 'ui-ripple';
+      span.style.cssText = `width:${d}px;height:${d}px;left:${e.clientX - r.left - d / 2}px;top:${e.clientY - r.top - d / 2}px`;
+      btn.appendChild(span);
+      span.addEventListener('animationend', () => span.remove());
+    }, true);
 
-      // Rebote elástico al soltar el clic — solo en botones de acción positiva/confirmación
-      document.addEventListener('click', function(e) {
-        const btn = e.target.closest('.btn-primary,.btn-success');
-        if (!btn) return;
-        btn.classList.remove('btn-bounce');
-        void btn.offsetWidth;
-        btn.classList.add('btn-bounce');
-        btn.addEventListener('animationend', () => btn.classList.remove('btn-bounce'), { once: true });
-      });
-    }
+    // Rebote elástico al soltar el clic — solo en botones de acción positiva/confirmación
+    document.addEventListener('click', function(e) {
+      if (_prefersReducedMotion()) return;
+      const btn = e.target.closest('.btn-primary,.btn-success');
+      if (!btn) return;
+      btn.classList.remove('btn-bounce');
+      void btn.offsetWidth;
+      btn.classList.add('btn-bounce');
+      btn.addEventListener('animationend', () => btn.classList.remove('btn-bounce'), { once: true });
+    });
 
     // (Long-press → modo selección se borró entero en la Tarea 2: apuntaba a
     // enterSelectionMode(), que ya no existe. Tarea 3 no lo necesita.)
@@ -5364,6 +5682,9 @@
       movements = _sortMovements(normalizeMovements(obj.movements));
       if (obj.profile && typeof obj.profile === 'object') PROFILE = { name: '', ...obj.profile };
       saveFunds(); saveMovements(); saveProfile();
+      // El backup ES la verdad nueva — nada de lo que traiga debe seguir marcado como
+      // "borrado" de una tanda de tumbas anterior (ver "Tumbas de borrado" más arriba).
+      _clearAllTombstones();
       _replaceFirestoreAll();
     }
 

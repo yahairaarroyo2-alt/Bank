@@ -1,4 +1,4 @@
-const CACHE = 'bank-v13';
+const CACHE = 'bank-v14';
 // Caché aparte para los CDN externos (jsPDF, Google Fonts) que la app necesita
 // para generar PDFs offline — se guarda con su propio nombre para no mezclarse
 // con el caché de la app (que se borra completo en cada actualización).
@@ -76,18 +76,28 @@ self.addEventListener('fetch', e => {
   if (isHTML) {
     e.respondWith(
       caches.match('./index.html').then(cached => {
+        // Descarga + guardado en caché, SIN tope de tiempo — esta es la que hay que dejar
+        // terminar de verdad (ver e.waitUntil más abajo).
+        const fetchAndCache = fetch(req).then(res => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then(c => c.put('./index.html', copy)).catch(() => {});
+          }
+          return res;
+        });
+        // Con tope de 3s — solo para la PRIMERA visita (sin caché todavía), así no se
+        // cuelga esperando una red lenta. Con caché ya no hace falta: se responde de una.
         const networkUpdate = Promise.race([
-          fetch(req).then(res => {
-            if (res.ok) {
-              const copy = res.clone();
-              caches.open(CACHE).then(c => c.put('./index.html', copy)).catch(() => {});
-            }
-            return res;
-          }),
+          fetchAndCache,
           new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
         ]).catch(() => null);
         if (cached) {
-          networkUpdate; // de fondo, sin esperarla — no bloquea esta apertura
+          // e.waitUntil mantiene el Service Worker vivo hasta que fetchAndCache TERMINE
+          // de verdad — sin esto, el navegador daba la petición por "atendida" apenas
+          // se devolvía `cached` y podía apagar el SW a mitad de la descarga/guardado de
+          // fondo, dejando la actualización a medias (index.html nunca quedaba guardado,
+          // así que la próxima apertura seguía sirviendo la versión vieja).
+          e.waitUntil(fetchAndCache.catch(() => {}));
           return cached;
         }
         return networkUpdate.then(res => res || new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } }));
