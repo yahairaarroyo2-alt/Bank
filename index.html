@@ -572,7 +572,7 @@
     .settings-page .settings-section { animation: uiCardIn .25s ease-out backwards; }
     /* Ajustes siempre entra por deslizamiento de pestaña (nunca de otra forma), así que
        sus secciones no necesitan repetir su propia entrada encima — mismo motivo que
-       Fondos/Movimientos/Resumen. */
+       Cuentas/Movimientos/Resumen. */
     .settings-page.no-entrance-anim .settings-section { animation: none !important; }
     .settings-page .settings-section:nth-of-type(2) { animation-delay: .04s; }
     .settings-page .settings-section:nth-of-type(3) { animation-delay: .08s; }
@@ -606,7 +606,7 @@
     @keyframes uiDominoIn { from{opacity:0;transform:translateY(10px) scale(.97)} to{opacity:1;transform:translateY(0) scale(1)} }
     .list-animate > * { animation: uiDominoIn .35s cubic-bezier(.22,1,.36,1) both; animation-delay: calc(var(--i, 0) * 60ms); }
 
-    /* Fit-M: slide direccional al cambiar entre pestañas Fondos‹›Movimientos‹›Resumen‹›Ajustes */
+    /* Fit-M: slide direccional al cambiar entre pestañas Cuentas‹›Movimientos‹›Resumen‹›Ajustes */
     @keyframes uiTabSlideFromRight { from{opacity:0;transform:translateX(36px)} to{opacity:1;transform:translateX(0)} }
     @keyframes uiTabSlideFromLeft  { from{opacity:0;transform:translateX(-36px)} to{opacity:1;transform:translateX(0)} }
     .tab-slide-right { animation: uiTabSlideFromRight .5s cubic-bezier(.22,1,.36,1); }
@@ -939,7 +939,7 @@
     /* ── Página "Novedades" (Ajustes) — igual patrón que Fit-M: NO es un modal que
        crece de un botón, es una sub-vista que reemplaza el contenido de Ajustes y
        se desliza como cualquier pestaña (mismas clases .tab-slide-right/-left que
-       switchTab usa entre Fondos‹›Movimientos‹›Resumen‹›Ajustes). El aviso automático al
+       switchTab usa entre Cuentas‹›Movimientos‹›Resumen‹›Ajustes). El aviso automático al
        abrir la app sigue usando el cartel chico de arriba (#modal-changelog). */
     #novedades-page { display: none; }
     /* .cl-section-title/.cl-section-desc/.cl-new son de siempre #666/#444/#111 fijos
@@ -1567,7 +1567,7 @@
       <div id="funds-list-page">
         <div class="history-actions" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
           <button class="btn btn-primary" onclick="openCreate(this)">+ Nuevo movimiento</button>
-          <button class="btn btn-ghost" onclick="openFundModal(null, this)">+ Nuevo fondo</button>
+          <button class="btn btn-ghost" onclick="openFundModal(null, this)">+ Nueva cuenta</button>
         </div>
         <div id="funds-banner" class="history-banner" style="display:none;"></div>
         <div id="funds-list"></div>
@@ -1598,7 +1598,7 @@
       </div>
       <div class="history-controls">
         <div style="display:flex;gap:8px;align-items:center;">
-          <input id="search-input" type="text" placeholder="Buscar por nota, fondo o monto"
+          <input id="search-input" type="text" placeholder="Buscar por nota, cuenta o monto"
             style="flex:1;min-width:0;padding: 12px; font-size: 1rem; box-sizing: border-box;"
             oninput="debouncedFilterMovements()">
           <button class="btn btn-ghost btn-sm" id="filter-toggle-btn" onclick="toggleFilterPanel()"
@@ -1624,7 +1624,7 @@
             <div id="year-chips" style="display:flex;gap:8px;flex-wrap:nowrap;"></div>
           </div>
           <div class="history-filter-row" id="fund-filter-row" style="display:none;">
-            <span class="filter-label">Fondo:</span>
+            <span class="filter-label">Cuenta:</span>
             <div id="fund-chips" style="display:flex;gap:8px;flex-wrap:nowrap;"></div>
           </div>
           <div class="history-filter-row">
@@ -1761,7 +1761,7 @@
               <div class="settings-row-sub">Qué ves al abrir la app</div>
             </div>
             <select id="home-tab-select" onchange="setHomeTab(this.value)" style="border-radius:8px;padding:6px 8px;font-family:inherit;font-size:0.9rem;flex-shrink:0;">
-              <option value="funds">Fondos</option>
+              <option value="funds">Cuentas</option>
               <option value="history">Movimientos</option>
             </select>
           </div>
@@ -1919,10 +1919,10 @@
     </div>
   </div>
 
-  <!-- Nuevo / editar fondo -->
+  <!-- Nueva / editar cuenta -->
   <div class="modal-overlay" id="modal-fund" onclick="if(event.target===this)closeFundModal()">
     <div class="modal">
-      <h2 id="fund-modal-title">Nuevo fondo</h2>
+      <h2 id="fund-modal-title">Nueva cuenta</h2>
       <label>Nombre</label>
       <input id="fund-name" type="text" placeholder="Ej: Vacaciones" onkeydown="if(event.key==='Enter')saveFundModal()">
       <label>Meta (opcional)</label>
@@ -1958,7 +1958,7 @@
       <div id="cl-items">
         <div class="cl-section">
           <div class="cl-section-title">Primera versión <span class="cl-new" data-cl-date="2026-09-21">NEW</span></div>
-          <div class="cl-section-desc">Fondos con meta, movimientos (Meter · Sacar prestado · Devolver · Gastar), préstamos con fecha, Resumen y PDF.</div>
+          <div class="cl-section-desc">Cuentas con meta, movimientos (Meter · Sacar prestado · Devolver · Gastar), préstamos con fecha, Resumen y PDF.</div>
         </div>
       </div>
       <button class="cl-close" onclick="closeChangelog()">¡Qué bueno saberlo!</button>
@@ -1971,12 +1971,12 @@
     <div class="card-menu-inner" style="min-width:230px;opacity:0;transition:opacity .12s ease .1s;">
       <button class="dropdown-item" onclick="closeDashMenu();generateSummaryPDF()">
         <div>Resumen general (PDF)</div>
-        <div style="font-size:0.72rem;color:var(--text-light);font-weight:400;white-space:normal;margin-top:1px;">Todos los fondos con sus saldos</div>
+        <div style="font-size:0.72rem;color:var(--text-light);font-weight:400;white-space:normal;margin-top:1px;">Todas las cuentas con sus saldos</div>
       </button>
       <!-- Solo con un fondo elegido en el selector — ver _updateFundStatementMenuItem() -->
       <button class="dropdown-item" id="dash-menu-statement-item" style="display:none;" onclick="closeDashMenu();generateFundStatementPDF(dashboardFundFilter)">
-        <div>Estado del fondo (PDF)</div>
-        <div style="font-size:0.72rem;color:var(--text-light);font-weight:400;white-space:normal;margin-top:1px;">Movimientos y saldo del fondo elegido</div>
+        <div>Estado de la cuenta (PDF)</div>
+        <div style="font-size:0.72rem;color:var(--text-light);font-weight:400;white-space:normal;margin-top:1px;">Movimientos y saldo de la cuenta elegida</div>
       </button>
       <div class="dropdown-divider"></div>
       <button class="dropdown-item" onclick="closeDashMenu();exportMovementsCSV()">
@@ -1990,7 +1990,7 @@
   <nav id="bottom-nav">
     <span id="bnLens" class="bn-lens" aria-hidden="true"></span>
     <button class="bn-item" data-nav="funds" onclick="switchTab('funds')">
-      <span class="bn-icon">🏦</span><span class="bn-lbl">Fondos</span>
+      <span class="bn-icon">🏦</span><span class="bn-lbl">Cuentas</span>
     </button>
     <button class="bn-item" data-nav="history" onclick="switchTab('history')">
       <span class="bn-icon">📋</span><span class="bn-lbl">Movimientos</span>
@@ -2411,9 +2411,9 @@
       });
     }
     function _syncMovement(m)        { _cloudSet(_movRef, m, 'el movimiento'); }
-    function _syncFund(f)            { _cloudSet(_fundRef, f, 'el fondo'); }
+    function _syncFund(f)            { _cloudSet(_fundRef, f, 'la cuenta'); }
     function _deleteMovementCloud(id){ _cloudDelete(_movRef, id, 'el movimiento'); }
-    function _deleteFundCloud(id)    { _cloudDelete(_fundRef, id, 'el fondo'); }
+    function _deleteFundCloud(id)    { _cloudDelete(_fundRef, id, 'la cuenta'); }
     function _syncSettings() {
       if (!_currentUser) return;
       _setRef().set({ profile: PROFILE, homeTab: _getHomeTab() }).catch(e => {
@@ -2563,6 +2563,11 @@
 
     // ═══════════════════════════ BANK: modelo ═══════════════════════════
     const MOV_TYPES = { in: 'Meter', loan: 'Sacar prestado', repay: 'Devolver', out: 'Gastar' };
+    // Mismo tipo, en pretérito — solo para el título de la tarjeta en las listas de
+    // movimientos (Movimientos y la página de una cuenta comparten _movementCardHTML).
+    // El formulario de crear/editar sigue usando MOV_TYPES (infinitivo, tiene más sentido
+    // en un botón de elegir acción).
+    const MOV_TYPES_PAST = { in: 'Metiste', loan: 'Sacaste prestado', repay: 'Devolviste', out: 'Gastaste' };
     const MOV_SIGN  = { in: 1, loan: -1, repay: 1, out: -1 };   // efecto de cada tipo sobre "Tienes"
     let funds = [];        // { id, name, goal, color, createdAt }
     let movements = [];    // { id, fundId, type, amount, date, note, dueDate, loanId }  — más reciente primero
@@ -2623,7 +2628,7 @@
       return { have: round2(have), owed: round2(owed) };
     }
     function fundById(id) { return funds.find(f => f.id === id) || null; }
-    function fundName(id) { return fundById(id)?.name || 'Sin fondo'; }
+    function fundName(id) { return fundById(id)?.name || 'Sin cuenta'; }
     // Préstamos con saldo pendiente de un fondo (para el selector de "Devolver")
     function openLoansOf(fundId) {
       return movements.filter(m => m.type === 'loan' && m.fundId === fundId && !isLoanSettled(m));
@@ -2936,7 +2941,7 @@
     // ── Página "Novedades" (Ajustes → Novedades) ──────────────────────────────
     // Sub-vista de pantalla completa dentro de Ajustes: reemplaza el contenido de
     // Ajustes y se desliza como cualquier pestaña (mismo patrón que switchTab entre
-    // Fondos‹›Movimientos‹›Resumen‹›Ajustes) — igual que renderNovedadesPage() en Fit-M.
+    // Cuentas‹›Movimientos‹›Resumen‹›Ajustes) — igual que renderNovedadesPage() en Fit-M.
     // No es un modal que crece de un botón: es una sub-vista real, con su "← Volver".
     function _slideSettingsView(dir) {
       const view = document.getElementById('view-settings');
@@ -2947,7 +2952,7 @@
     // Toda sub-vista de Ajustes (Novedades, Tema, Copias automáticas, Perfil)
     // comparte el mismo mecanismo: esconde la lista normal, muestra
     // la página pedida, y desliza como cualquier pestaña — igual que switchTab entre
-    // Fondos‹›Movimientos‹›Resumen‹›Ajustes. Reusado también por el reset en switchTab().
+    // Cuentas‹›Movimientos‹›Resumen‹›Ajustes. Reusado también por el reset en switchTab().
     const SETTINGS_SUBVIEWS = ['novedades-page', 'tema-page', 'copias-page', 'perfil-page'];
     function _openSettingsSubView(id) {
       document.querySelector('.settings-page').style.display = 'none';
@@ -3069,7 +3074,7 @@
       return `
         <div class="mov-card" data-card-id="${id}" style="${cardStyle}">
           <div class="mov-card-info" data-action="edit" data-id="${id}" style="cursor:pointer;">
-            <div class="mov-card-num">${MOV_TYPES[m.type]}${badge}</div>
+            <div class="mov-card-num">${MOV_TYPES_PAST[m.type]}${badge}</div>
             <div class="mov-card-client">${escapeHTML(fundName(m.fundId))}${m.note ? ' · ' + escapeHTML(m.note) : ''}</div>
             <div class="mov-card-date" style="color:var(--text-light);font-size:0.82rem;margin-top:2px;">${formatDateDisplay(m.date)}</div>
             ${sub}
@@ -3185,7 +3190,7 @@
       const banner = document.getElementById('funds-banner');
       if (funds.length === 0) {
         banner.style.display = 'none';
-        el.innerHTML = `<div class="empty-state"><p><strong>No tienes fondos todavía.</strong><br>Un fondo es una alcancía con nombre. Crea el primero con <b>+ Nuevo fondo</b>.</p></div>`;
+        el.innerHTML = `<div class="empty-state"><p><strong>No tienes cuentas todavía.</strong><br>Una cuenta es una alcancía con nombre. Crea la primera con <b>+ Nueva cuenta</b>.</p></div>`;
         _animateListEntrance = false;
         return;
       }
@@ -3193,7 +3198,7 @@
       banner.style.display = 'flex';
       banner.style.animation = _animateListEntrance ? '' : 'none';
       banner.innerHTML = `
-        <div class="banner-stat"><span class="lbl">Fondos</span><span class="val">${funds.length}</span></div>
+        <div class="banner-stat"><span class="lbl">Cuentas</span><span class="val">${funds.length}</span></div>
         <div class="banner-divider"></div>
         <div class="banner-stat banner-paid"><span class="lbl">Tienes</span><span class="val">${formatMoney(have)}</span></div>
         <div class="banner-divider"></div>
@@ -3235,6 +3240,12 @@
       if (!f) return;
       const { have, owed } = fundBalance(f.id);
       const pct = f.goal > 0 ? Math.max(0, Math.min(100, have / f.goal * 100)) : 0;
+      // Tercera casilla: Meta si la cuenta tiene una, si no Gastaste (total de movimientos
+      // "Gastar" de esta cuenta) — así la fila nunca queda con un hueco vacío.
+      const spent = round2(movements.filter(m => m.fundId === f.id && m.type === 'out').reduce((s, m) => s + m.amount, 0));
+      const thirdBox = f.goal > 0
+        ? `<div class="banner-stat"><span class="lbl">Meta ${formatMoney(f.goal)}</span><span class="val">${pct.toFixed(0)}%</span></div>`
+        : `<div class="banner-stat banner-pending"><span class="lbl">Gastaste</span><span class="val">${formatMoney(spent)}</span></div>`;
       document.getElementById('fund-page-title').textContent = f.name;
       document.getElementById('fund-page-menu-btn').dataset.id = f.id;
       document.getElementById('fund-page-stats').innerHTML = `
@@ -3242,11 +3253,11 @@
           <div class="banner-stat banner-paid"><span class="lbl">Tienes</span><span class="val">${formatMoney(have)}</span></div>
           <div class="banner-divider"></div>
           <div class="banner-stat banner-pending"><span class="lbl">Debes</span><span class="val">${formatMoney(owed)}</span></div>
-          ${f.goal > 0 ? `<div class="banner-divider"></div><div class="banner-stat"><span class="lbl">Meta ${formatMoney(f.goal)}</span><span class="val">${pct.toFixed(0)}%</span></div>` : ''}
+          <div class="banner-divider"></div>${thirdBox}
         </div>
         ${f.goal > 0 ? `<div class="goal-bar" style="margin:0 0 14px;"><span style="width:${pct.toFixed(1)}%;background:${escapeHTML(f.color || '#5b8fa8')};"></span></div>` : ''}`;
       const list = sortMovementsForDisplay(movements.filter(m => m.fundId === f.id));
-      _renderMovementList(list, document.getElementById('fund-movement-list'), '<p>Este fondo no tiene movimientos todavía.</p>');
+      _renderMovementList(list, document.getElementById('fund-movement-list'), '<p>Esta cuenta no tiene movimientos todavía.</p>');
     }
 
     // ── Modal nuevo / editar fondo ──
@@ -3254,7 +3265,7 @@
     function openFundModal(id, triggerEl) {
       const f = id ? fundById(id) : null;
       _fundModalId = f ? f.id : null;
-      document.getElementById('fund-modal-title').textContent = f ? 'Editar fondo' : 'Nuevo fondo';
+      document.getElementById('fund-modal-title').textContent = f ? 'Editar cuenta' : 'Nueva cuenta';
       document.getElementById('fund-name').value = f?.name || '';
       document.getElementById('fund-goal').value = f?.goal ? f.goal : '';
       document.getElementById('fund-color').value = f?.color || '#5b8fa8';
@@ -3270,15 +3281,15 @@
     }
     function saveFundModal() {
       const name = document.getElementById('fund-name').value.trim();
-      if (!name) { showToast('Ponle un nombre al fondo', 'error'); return; }
+      if (!name) { showToast('Ponle un nombre a la cuenta', 'error'); return; }
       const goal = round2(document.getElementById('fund-goal').value);
       const color = document.getElementById('fund-color').value || '';
       if (_fundModalId) {
         updateFund(_fundModalId, { name, goal, color });
-        showToast('Fondo actualizado', 'success');
+        showToast('Cuenta actualizada', 'success');
       } else {
         if (!addFund({ name, goal, color })) { showToast('No se pudo guardar (almacenamiento lleno)', 'error'); return; }
-        showToast('Fondo creado', 'success');
+        showToast('Cuenta creada', 'success');
       }
       closeFundModal();
       _refreshCurrentView();
@@ -3288,10 +3299,10 @@
       const f = fundById(id);
       if (!f) return;
       const n = movements.filter(m => m.fundId === id).length;
-      const msg = `¿Eliminar el fondo "${f.name}"?` + (n ? `\n\nSe borran también sus ${n} movimiento(s). Se descargará un backup antes, por seguridad.` : '');
+      const msg = `¿Eliminar la cuenta "${f.name}"?` + (n ? `\n\nSe borran también sus ${n} movimiento(s). Se descargará un backup antes, por seguridad.` : '');
       if (!(await _confirmDialog(msg, { confirmLabel: 'Eliminar', danger: true }, triggerEl))) return;
-      if (n) downloadAutoBackup('antes-de-borrar-fondo');
-      takeSnapshot('antes-de-borrar-fondo');
+      if (n) downloadAutoBackup('antes-de-borrar-cuenta');
+      takeSnapshot('antes-de-borrar-cuenta');
       deleteFund(id);
       if (_openFundId === id) {
         _openFundId = null;
@@ -3307,7 +3318,7 @@
     let filteredMovements = [];
     let historyTypeFilter = 'all';    // 'all' | 'in' | 'loan' | 'repay' | 'out' | 'overdue'
     let historyYearFilter = null;
-    let historyFundFilter = null;     // id de fondo
+    let historyFundFilter = null;     // id de cuenta
     let historySortMode = 'date';     // 'date' | 'amount-desc' | 'amount-asc'
 
     function setSortMode(mode) {
@@ -3463,8 +3474,8 @@
       const title = document.getElementById('create-title');
       if (title) title.textContent = editingMovementId ? 'Editar movimiento' : 'Nuevo movimiento';
       if (funds.length === 0) {
-        el.innerHTML = `<div class="empty-state"><p><strong>Primero crea un fondo.</strong><br>Un fondo es una alcancía con nombre (Emergencia, Vacaciones…).</p>
-          <button class="btn btn-primary" onclick="openFundModal(null, this)">+ Nuevo fondo</button></div>`;
+        el.innerHTML = `<div class="empty-state"><p><strong>Primero crea una cuenta.</strong><br>Una cuenta es una alcancía con nombre (Emergencia, Vacaciones…).</p>
+          <button class="btn btn-primary" onclick="openFundModal(null, this)">+ Nueva cuenta</button></div>`;
         return;
       }
       if (!formFundId || !fundById(formFundId)) formFundId = funds[0].id;
@@ -3477,7 +3488,7 @@
         <div class="settings-section subview-form" style="padding:16px 18px;">
           <label>Tipo</label>
           <div class="mov-type-grid">${typeBtns}</div>
-          <label>Fondo</label>
+          <label>Cuenta</label>
           <select id="mf-fund" onchange="formFundId=this.value;formLoanId='';_formChanged();renderCreateForm();">
             ${funds.map(f => `<option value="${f.id}"${f.id === formFundId ? ' selected' : ''}>${escapeHTML(f.name)}</option>`).join('')}
           </select>
@@ -3489,7 +3500,7 @@
           <label>Devolver antes del (opcional)</label>
           <input id="mf-due" type="date" value="${formDueDate}" onchange="formDueDate=this.value;_formChanged();">` : ''}
           ${formType === 'repay' ? (loans.length === 0
-            ? `<p style="color:var(--text-light);font-size:0.9rem;margin:6px 0 12px;">No debes nada en este fondo.</p>`
+            ? `<p style="color:var(--text-light);font-size:0.9rem;margin:6px 0 12px;">No debes nada en esta cuenta.</p>`
             : `<label>Préstamo</label>
           <select id="mf-loan" onchange="formLoanId=this.value;_formChanged();">
             ${loans.map(l => `<option value="${l.id}"${l.id === formLoanId ? ' selected' : ''}>${loanLabel(l)}</option>`).join('')}
@@ -3876,7 +3887,7 @@
       return out;
     }
     function _fundsTableHTML() {
-      return `<table class="items-table"><thead><tr><th>Fondo</th><th style="text-align:right;">Tienes</th><th style="text-align:right;">Debes</th></tr></thead><tbody>` +
+      return `<table class="items-table"><thead><tr><th>Cuenta</th><th style="text-align:right;">Tienes</th><th style="text-align:right;">Debes</th></tr></thead><tbody>` +
         funds.map(f => {
           const b = fundBalance(f.id);
           return `<tr style="cursor:pointer;" data-action="dash-fund-filter" data-id="${escapeHTML(f.id)}"><td>${escapeHTML(f.name)}</td><td style="text-align:right;">${formatMoney(b.have)}</td><td style="text-align:right;">${b.owed > 0 ? formatMoney(b.owed) : '—'}</td></tr>`;
@@ -3907,7 +3918,7 @@
           </div>` : '';
       const fundSelect = funds.length > 1 ? `
         <select onchange="setDashboardFundFilter(this.value)" style="padding:6px 10px;border:1px solid var(--blue-light);border-radius:var(--radius);font-size:0.85rem;background:var(--lg-card);color:var(--text);">
-          <option value="">Todos los fondos</option>
+          <option value="">Todas las cuentas</option>
           ${funds.map(f => `<option value="${f.id}"${dashboardFundFilter === f.id ? ' selected' : ''}>${escapeHTML(f.name)}</option>`).join('')}
         </select>` : '';
       const plural = (n, s) => n + ' ' + s + (n !== 1 ? 's' : '');
@@ -3931,7 +3942,7 @@
               <div class="pp-box paid">
                 <div class="pp-label">Tienes</div>
                 <div class="pp-value">${formatMoney(totals.have)}</div>
-                <div class="pp-sub">${dashboardFundFilter ? escapeHTML(fundName(dashboardFundFilter)) : plural(funds.length, 'fondo')}</div>
+                <div class="pp-sub">${dashboardFundFilter ? escapeHTML(fundName(dashboardFundFilter)) : plural(funds.length, 'cuenta')}</div>
               </div>
               <div class="pp-box pending">
                 <div class="pp-label">Debes</div>
@@ -3956,7 +3967,7 @@
             </div>
           </div>
 
-          ${!dashboardFundFilter && funds.length > 1 ? `<div class="dashboard-card" style="grid-column:1 / -1;"><h3>Por fondo</h3>${_fundsTableHTML()}</div>` : ''}
+          ${!dashboardFundFilter && funds.length > 1 ? `<div class="dashboard-card" style="grid-column:1 / -1;"><h3>Por cuenta</h3>${_fundsTableHTML()}</div>` : ''}
 
           <div class="dashboard-card" style="grid-column:1 / -1;">
             <h3>Cómo va tu ahorro</h3>
@@ -4371,7 +4382,7 @@
       const doc = new jsPDF({ unit: 'pt', format: 'letter' });
       const W = _PDF_W, margin = _PDF_MARGIN;
       const { have, owed } = fundBalance(f.id);
-      let y = _pdfTitle(doc, 'Estado del fondo: ' + f.name, 55);
+      let y = _pdfTitle(doc, 'Estado de la cuenta: ' + f.name, 55);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(40);
       doc.text('Tienes ' + formatMoneyForPDF(have)
         + (owed > 0 ? '   ·   Debes ' + formatMoneyForPDF(owed) : '')
@@ -4417,17 +4428,17 @@
           y += 14;
         });
       }
-      _deliverPDF(doc, `Bank-${f.name.replace(/[^\w-]+/g, '_')}.pdf`, 'Estado del fondo — ' + f.name);
+      _deliverPDF(doc, `Bank-${f.name.replace(/[^\w-]+/g, '_')}.pdf`, 'Estado de la cuenta — ' + f.name);
     }
 
     async function generateSummaryPDF() {
-      if (funds.length === 0) { showToast('No hay fondos todavía', 'info'); return; }
+      if (funds.length === 0) { showToast('No hay cuentas todavía', 'info'); return; }
       await _ensureJsPDF();
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ unit: 'pt', format: 'letter' });
       const W = _PDF_W, margin = _PDF_MARGIN;
       let y = _pdfTitle(doc, 'Resumen de ahorro', 55);
-      y = _pdfSection(doc, 'Fondos', y);
+      y = _pdfSection(doc, 'Cuentas', y);
       funds.forEach(f => {
         if (y > 740) { doc.addPage(); y = 55; }
         const b = fundBalance(f.id);
@@ -4721,7 +4732,7 @@
       if (btn.dataset.kind === 'fund') {
         menu.innerHTML = '<div class="card-menu-inner" style="min-width:200px;opacity:0;transition:opacity .12s ease .1s;">' +
           `<button class="dropdown-item" data-action="fund-edit" data-id="${id}">Editar</button>` +
-          `<button class="dropdown-item" data-action="fund-pdf" data-id="${id}">Estado del fondo (PDF)</button>` +
+          `<button class="dropdown-item" data-action="fund-pdf" data-id="${id}">Estado de la cuenta (PDF)</button>` +
           `<div class="dropdown-divider"></div>` +
           `<button class="dropdown-item danger" data-action="fund-delete" data-id="${id}">Eliminar</button>` +
           '</div>';
@@ -5130,7 +5141,7 @@
     function exportMovementsCSV() {
       const list = getDashboardMovements();
       if (list.length === 0) { showToast('No hay movimientos en este período para exportar', 'info'); return; }
-      const rows = [['Fecha', 'Fondo', 'Tipo', 'Monto', 'Nota', 'Devolver antes del', 'Saldo del préstamo']];
+      const rows = [['Fecha', 'Cuenta', 'Tipo', 'Monto', 'Nota', 'Devolver antes del', 'Saldo del préstamo']];
       sortMovementsForDisplay(list).forEach(m => rows.push([
         m.date, fundName(m.fundId), MOV_TYPES[m.type], m.amount.toFixed(2), m.note, m.dueDate,
         m.type === 'loan' ? loanBalance(m).balance.toFixed(2) : ''
@@ -5230,7 +5241,7 @@
             return;
           }
           const dateStr = backup.exportedAt ? backup.exportedAt.slice(0, 10) : 'fecha desconocida';
-          const msg = `¿Importar backup del ${dateStr} con ${backup.funds.length} fondo(s) y ${backup.movements.length} movimiento(s)?\n\n` +
+          const msg = `¿Importar backup del ${dateStr} con ${backup.funds.length} cuenta(s) y ${backup.movements.length} movimiento(s)?\n\n` +
                       `Esto reemplazará tus ${movements.length} movimiento(s) actual(es).\n\n` +
                       `Por seguridad se descargará un backup de tus datos actuales antes de importar, y se guardará una copia que podrás restaurar desde Ajustes → Deshacer último import.`;
           if (!(await _confirmDialog(msg, { confirmLabel: 'Importar y Reemplazar', danger: true }))) return;

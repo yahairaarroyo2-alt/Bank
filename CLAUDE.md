@@ -7,6 +7,8 @@ No hay React, no hay Vite, no hay build step. Editas el archivo y se ve el cambi
 
 Bank es la app hermana de **Facturas** (`../Facturas`): mismo esqueleto (genie, tema, login, sync, backup, novedades, modo batería, SW), pero en vez de facturas/clientes lleva **fondos de ahorro** y **movimientos** de dinero. Nació copiando `Facturas/index.html` y podando/renombrando (ver `docs/superpowers/plans/2026-09-21-bank.md` y `docs/superpowers/specs/2026-09-21-bank-design.md`). El `CLAUDE.md` de Facturas es una buena referencia de estilo para pitfalls compartidos, pero **no** es fuente de verdad para Bank — este archivo sí lo es.
 
+⚠️ **"Fondo" en el código, "Cuenta" en pantalla:** el modelo de datos y casi toda la nomenclatura interna (`fundBalance`, `openFundModal`, `#view-funds`, `bank_funds`, etc.) siguen llamándose "fondo" — pero el texto que ve el usuario dice **"Cuenta"** (pestaña "Cuentas", botón "+ Nueva cuenta", etc.). Es solo una palabra distinta para lo mismo; no cambies los nombres internos por esto, solo ten presente el desfase al tocar textos visibles.
+
 ## Stack
 
 | Capa | Tecnología |
@@ -99,7 +101,7 @@ Del spec (`docs/superpowers/specs/2026-09-21-bank-design.md`), verificado contra
 ```
 
 **Nada derivado se guarda** — todo se calcula al vuelo desde el array `movements`:
-- `MOV_TYPES` / `MOV_SIGN` — mapas fijos: `{in:'Meter', loan:'Sacar prestado', repay:'Devolver', out:'Gastar'}` / `{in:1, loan:-1, repay:1, out:-1}` (signo de cada tipo sobre "Tienes")
+- `MOV_TYPES` / `MOV_SIGN` — mapas fijos: `{in:'Meter', loan:'Sacar prestado', repay:'Devolver', out:'Gastar'}` / `{in:1, loan:-1, repay:1, out:-1}` (signo de cada tipo sobre "Tienes"). `MOV_TYPES` (infinitivo) es solo para el formulario de crear/editar (botones de Tipo) — el título de la tarjeta en las listas de movimientos usa `MOV_TYPES_PAST` (pretérito: Metiste/Sacaste prestado/Devolviste/Gastaste), ver `_movementCardHTML()`.
 - **Tienes** (`fundBalance(fundId).have`) = suma de `MOV_SIGN[type] * amount` de los movimientos del fondo
 - **Debes** (`fundBalance(fundId).owed`) = suma de `loanBalance(loan).balance` de cada préstamo del fondo
 - **Saldo de un préstamo** (`loanBalance(loan)`) = `monto − suma de sus repay` — así borrar/editar una devolución nunca deja un préstamo desincronizado
