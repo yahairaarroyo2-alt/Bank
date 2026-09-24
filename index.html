@@ -2166,13 +2166,14 @@
 
 
     // ─── Firebase ─────────────────────────────────────────────────────────
-    // ⚠️ Fase 1: proyecto ficticio. En localhost no hace falta (ver _isDev). La Tarea 9
-    // pone el proyecto real de Bank — NUNCA el de Facturas (son apps separadas).
+    // Proyecto real de Bank (bank-f0331) — separado del de Facturas.
     firebase.initializeApp({
-      apiKey: "placeholder",
-      authDomain: "bank-placeholder.firebaseapp.com",
-      projectId: "bank-placeholder",
-      appId: "1:0:web:0"
+      apiKey: "AIzaSyBdtt5a00dyj3gpbMAhs7zvn1xqJCUn_f4",
+      authDomain: "bank-f0331.firebaseapp.com",
+      projectId: "bank-f0331",
+      storageBucket: "bank-f0331.firebasestorage.app",
+      messagingSenderId: "567203983120",
+      appId: "1:567203983120:web:cbe46b4a29fef09a9eff95"
     });
     const _auth = firebase.auth();
     const _db = firebase.firestore();
@@ -2217,7 +2218,7 @@
         if (e.code === 'auth/operation-not-allowed') {
           errEl.textContent = 'El inicio con correo no está habilitado en Firebase. Usa Google o habilita Email/Password en la consola.';
           btn.disabled = false; btn.textContent = 'Entrar / Crear cuenta';
-        } else if (['auth/user-not-found','auth/invalid-credential','auth/invalid-email','auth/internal-error'].includes(e.code)) {
+        } else if (['auth/user-not-found','auth/invalid-credential','auth/invalid-login-credentials','auth/invalid-email','auth/internal-error'].includes(e.code)) {
           try { await _auth.createUserWithEmailAndPassword(email, pass); }
           catch (e2) {
             // Si el correo ya existe, el error original era contraseña incorrecta, no usuario nuevo
