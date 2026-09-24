@@ -3240,12 +3240,14 @@
       if (!f) return;
       const { have, owed } = fundBalance(f.id);
       const pct = f.goal > 0 ? Math.max(0, Math.min(100, have / f.goal * 100)) : 0;
-      // Tercera casilla: Meta si la cuenta tiene una, si no Gastaste (total de movimientos
-      // "Gastar" de esta cuenta) — así la fila nunca queda con un hueco vacío.
+      // Gastaste (total de movimientos "Gastar" de esta cuenta) siempre se muestra; Meta se
+      // suma además cuando la cuenta tiene una — nunca se pisan, ambas caben (el banner ya
+      // soporta hasta 4 casillas, ver el grid de la media query de celular). Gastaste solo
+      // se suma si de verdad gastaste algo — si no, no hay nada que reportar todavía.
       const spent = round2(movements.filter(m => m.fundId === f.id && m.type === 'out').reduce((s, m) => s + m.amount, 0));
-      const thirdBox = f.goal > 0
-        ? `<div class="banner-stat"><span class="lbl">Meta ${formatMoney(f.goal)}</span><span class="val">${pct.toFixed(0)}%</span></div>`
-        : `<div class="banner-stat banner-pending"><span class="lbl">Gastaste</span><span class="val">${formatMoney(spent)}</span></div>`;
+      const extraBoxes = (f.goal > 0 ? [`<div class="banner-stat"><span class="lbl">Meta ${formatMoney(f.goal)}</span><span class="val">${pct.toFixed(0)}%</span></div>`] : [])
+        .concat(spent > 0 ? [`<div class="banner-stat banner-pending"><span class="lbl">Gastaste</span><span class="val">${formatMoney(spent)}</span></div>`] : [])
+        .map(box => `<div class="banner-divider"></div>${box}`).join('');
       document.getElementById('fund-page-title').textContent = f.name;
       document.getElementById('fund-page-menu-btn').dataset.id = f.id;
       document.getElementById('fund-page-stats').innerHTML = `
@@ -3253,7 +3255,7 @@
           <div class="banner-stat banner-paid"><span class="lbl">Tienes</span><span class="val">${formatMoney(have)}</span></div>
           <div class="banner-divider"></div>
           <div class="banner-stat banner-pending"><span class="lbl">Debes</span><span class="val">${formatMoney(owed)}</span></div>
-          <div class="banner-divider"></div>${thirdBox}
+          ${extraBoxes}
         </div>
         ${f.goal > 0 ? `<div class="goal-bar" style="margin:0 0 14px;"><span style="width:${pct.toFixed(1)}%;background:${escapeHTML(f.color || '#5b8fa8')};"></span></div>` : ''}`;
       const list = sortMovementsForDisplay(movements.filter(m => m.fundId === f.id));
