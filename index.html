@@ -164,11 +164,6 @@
       justify-content: space-between;
       gap: 12px;
       flex-wrap: wrap;
-      /* El long-press activa el modo selección — sin esto, iOS muestra su menú de
-         copiar/compartir o selecciona texto en vez de disparar nuestro gesto. */
-      -webkit-touch-callout: none;
-      -webkit-user-select: none;
-      user-select: none;
     }
     .mov-card-info { flex: 1; min-width: 200px; }
     .mov-card-num { font-size: 1.1rem; font-weight: 700; color: var(--text); }
@@ -191,7 +186,6 @@
       .mov-card-total { grid-column: 2; grid-row: 1; font-size: 1rem; white-space: nowrap; text-align: right; }
       .mov-card-actions { grid-column: 2; grid-row: 2; justify-content: flex-end; flex-wrap: nowrap; margin-top: 4px; }
       .mov-card-actions .btn-sm { padding: 5px 9px; font-size: 0.8rem; }
-      .mov-card-actions [data-action="view-pdf"] { display: none; }
     }
 
     .empty-state {
@@ -200,143 +194,10 @@
       color: var(--text-light);
     }
     .empty-state p { font-size: 1rem; }
-    .empty-illustration {
-      width: 104px; height: 104px; margin: 0 auto 18px;
-      display: flex; align-items: center; justify-content: center;
-      border-radius: 50%;
-      background: rgba(255,255,255,.28);
-      border: 1px solid rgba(255,255,255,.55);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 8px 24px rgba(0,0,0,.08);
-    }
 
     /* ── Create View ── */
     .create-header { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; justify-content: space-between; align-items: center; }
     .create-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-
-    /* Invoice paper */
-    /* El PDF/papel conserva su azul original (no se neutraliza con el resto de la app) */
-    .invoice-paper {
-      --blue: #5b8fa8;
-      --blue-light: #e8f0f5;
-      --blue-dark: #3d6b82;
-      background: var(--lg-card);
-      border: var(--lg-border);
-      box-shadow: var(--lg-shadow);
-      border-radius: var(--radius);
-      padding: 32px 36px;
-      margin-bottom: 20px;
-    }
-
-    .inv-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 24px;
-      gap: 20px;
-      flex-wrap: wrap;
-    }
-    .inv-logo:has(img) { background: transparent !important; padding: 0 !important; min-width: 0 !important; min-height: 0 !important; border: none !important; }
-    .inv-logo {
-      min-width: 70px;
-      min-height: 70px;
-      max-width: 120px;
-      max-height: 120px;
-      width: auto;
-      height: auto;
-      background: var(--gray);
-      border-radius: var(--radius);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--text-light);
-      font-size: 0.75rem;
-      text-align: center;
-      padding: 8px;
-    }
-    .inv-title {
-      font-size: 2rem;
-      font-style: italic;
-      color: var(--blue);
-      font-weight: 400;
-    }
-
-    .inv-meta {
-      display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      margin-bottom: 24px;
-      flex-wrap: wrap;
-    }
-    .inv-issuer { font-size: 0.88rem; line-height: 1.7; }
-    .inv-issuer strong { font-size: 1rem; }
-    .inv-details { text-align: right; font-size: 0.88rem; line-height: 1.7; }
-    .inv-details label { font-weight: 600; }
-    .inv-num { font-weight: 700; color: var(--blue); }
-
-    .inv-to { margin-bottom: 24px; }
-    .inv-to-content { font-size: 0.88rem; line-height: 1.7; text-align: right; }
-
-    /* Items table */
-    .table-wrap { overflow-x: auto; margin-bottom: 20px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-    thead tr { background: var(--blue); color: white; }
-    thead th { padding: 10px 12px; text-align: left; font-weight: 600; white-space: nowrap; }
-    thead th:last-child, thead th:nth-child(3) { text-align: right; }
-    tbody tr:nth-child(even) { background: var(--gray); }
-    tbody tr:nth-child(odd) { background: white; }
-    tbody td { padding: 9px 12px; vertical-align: middle; }
-    tbody td:nth-child(3), tbody td:nth-child(4) { text-align: right; white-space: nowrap; }
-    tbody td:last-child { white-space: nowrap; }
-
-    tbody td:nth-child(3) { width: 150px; }  /* Fecha column */
-
-    td input {
-      width: 100%;
-      border: 1px solid transparent;
-      border-radius: 4px;
-      padding: 4px 6px;
-      font-family: inherit;
-      font-size: 0.88rem;
-      background: transparent;
-      color: var(--text);
-    }
-    td input:focus {
-      outline: none;
-      border-color: var(--blue);
-      background: white;
-    }
-    .input-right { text-align: right; }
-
-    .add-row-wrap { margin-bottom: 20px; }
-
-    /* Totals */
-    .inv-totals { display: flex; justify-content: flex-end; }
-    .totals-table { min-width: 240px; font-size: 0.9rem; }
-    .totals-table td { padding: 5px 8px; }
-    .totals-table td:first-child { color: var(--text-light); text-align: right; padding-right: 16px; }
-    .totals-table td:last-child { text-align: right; font-weight: 600; min-width: 100px; }
-    .total-row td { font-size: 1.05rem; font-weight: 700; border-top: 2px solid var(--blue); padding-top: 10px; color: var(--text); }
-
-    .tax-input {
-      width: 90px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      padding: 3px 6px;
-      font-family: inherit;
-      font-size: 0.9rem;
-      text-align: right;
-    }
-    .tax-input:focus { outline: none; border-color: var(--blue); }
-
-    /* Date input */
-    .date-input {
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      padding: 4px 8px;
-      font-family: inherit;
-      font-size: 0.88rem;
-    }
-    .date-input:focus { outline: none; border-color: var(--blue); }
 
     /* Client edit modal */
     .modal-overlay {
@@ -388,16 +249,6 @@
 
     /* Responsive */
     @media (max-width: 600px) {
-      .invoice-paper { padding: 20px 16px; }
-      /* Mantener layout de 2 columnas igual que escritorio */
-      .inv-top { gap: 10px; }
-      .inv-title { font-size: 1.35rem; }
-      .inv-meta { gap: 10px; flex-wrap: nowrap; align-items: flex-start; }
-      .inv-issuer { font-size: 0.78rem; flex: 1 1 0; min-width: 0; }
-      .inv-issuer strong { font-size: 0.85rem; }
-      .inv-details { font-size: 0.78rem; flex: 0 0 auto; }
-      .inv-to-content { font-size: 0.78rem; }
-      .inv-logo { max-width: 80px; max-height: 80px; min-width: 55px; min-height: 55px; font-size: 0.65rem; }
       .create-header { flex-direction: row; }
     }
     @media (max-width: 480px) {
@@ -406,25 +257,6 @@
       .create-actions { display: flex; gap: 5px; flex-shrink: 0; }
       .create-actions .btn { font-size: 0.76rem; padding: 6px 9px; }
       .create-header > [aria-label="Volver"] { font-size: 0.95rem !important; padding: 5px 9px !important; flex-shrink: 0; }
-      /* Tabla de items — cabe sin scroll en pantalla de 375px */
-      table { font-size: 0.76rem; }
-      thead th { padding: 7px 5px; white-space: nowrap; }
-      tbody td { padding: 6px 5px; }
-      tbody td:nth-child(3) { width: 80px; }  /* Fecha */
-      td input { font-size: 0.76rem; padding: 3px 4px; }
-      /* Totals */
-      .totals-table { font-size: 0.82rem; min-width: 0; width: 100%; }
-      .inv-totals { justify-content: stretch; }
-      /* Header form */
-      .inv-issuer { font-size: 0.82rem; }
-      .inv-details { font-size: 0.82rem; }
-      .inv-to-content { font-size: 0.82rem; }
-      /* Glass (tpl4) — header sin wrap + tabla con scroll */
-      .invoice-paper[data-tpl="4"] .inv-top { flex-wrap: nowrap; gap: 8px; }
-      .invoice-paper[data-tpl="4"] .table-wrap { overflow-x: auto; overflow-y: hidden; }
-      .invoice-paper[data-tpl="4"] thead th { padding: 7px 6px; }
-      .invoice-paper[data-tpl="4"] tbody td  { padding: 7px 6px; }
-      .invoice-paper[data-tpl="4"] .totals-table td { padding: 7px 8px; }
     }
 
     /* ── Toast Notifications ── */
@@ -604,8 +436,6 @@
 
     /* Fit-M: efecto dominó — listas que entran de a un elemento, escalonadas por --i */
     @keyframes uiDominoIn { from{opacity:0;transform:translateY(10px) scale(.97)} to{opacity:1;transform:translateY(0) scale(1)} }
-    .list-animate > * { animation: uiDominoIn .35s cubic-bezier(.22,1,.36,1) both; animation-delay: calc(var(--i, 0) * 60ms); }
-
     /* Fit-M: slide direccional al cambiar entre pestañas Cuentas‹›Movimientos‹›Resumen‹›Ajustes */
     @keyframes uiTabSlideFromRight { from{opacity:0;transform:translateX(36px)} to{opacity:1;transform:translateX(0)} }
     @keyframes uiTabSlideFromLeft  { from{opacity:0;transform:translateX(-36px)} to{opacity:1;transform:translateX(0)} }
@@ -641,7 +471,6 @@
     @keyframes uiOverlayShrink { from{clip-path:inset(0 round 0px)} to{clip-path:inset(var(--ctop,0) var(--cright,0) var(--cbottom,0) var(--cleft,0) round var(--cradius,999px))} }
     .overlay-grow-in { animation: uiOverlayGrow .5s cubic-bezier(.8,0,.2,1) !important; }
     .overlay-shrink-out { animation: uiOverlayShrink .4s cubic-bezier(.8,0,.2,1) !important; }
-    .pp-bar, .items-bar > span { transform-origin: left center; animation: uiGrowX .55s cubic-bezier(.22,1,.36,1); }
     .month-separator, .history-banner { animation: uiCardIn .25s ease-out backwards; }
     /* Respuesta al tocar una tarjeta (antes solo los botones tenían feedback) */
     .mov-card { transition: transform .12s ease, border-color .15s, box-shadow .15s; }
@@ -786,13 +615,6 @@
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
-    }
-
-    .metric-detail {
-      font-size: 0.85rem;
-      color: var(--text-light);
-      margin-top: 8px;
-      line-height: 1.4;
     }
 
     /* ── History filters & banner ── */
@@ -1055,48 +877,6 @@
     .pp-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-light); font-weight: 600; }
     .pp-value { font-size: 1.4rem; font-weight: 700; color: var(--text); }
     .pp-sub { font-size: 0.8rem; color: var(--text-light); }
-    .pp-bar-wrap { height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; margin-top: 8px; }
-    .pp-bar { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #4caf50, #66bb6a); transition: width 0.4s; }
-
-    .list-item-card {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      background: rgba(255,255,255,.5);
-      border-radius: 10px;
-      border: 1px solid rgba(0,0,0,.06);
-    }
-    body.night .list-item-card { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.1); }
-    .items-table .bar-cell {
-      width: 90px;
-      padding-left: 0;
-    }
-    .items-bar {
-      position: relative;
-      height: 6px;
-      background: rgba(0,0,0,.05);
-      border-radius: 4px;
-    }
-    .items-bar > span {
-      display: block;
-      height: 100%;
-      background: linear-gradient(90deg, rgba(255,255,255,.9) 0%, rgba(255,255,255,.55) 100%);
-      border: 1px solid rgba(255,255,255,.9);
-      border-radius: 4px;
-      box-shadow: 0 1px 3px rgba(60,90,110,.22), inset 0 1px 0 rgba(255,255,255,.8);
-    }
-    .empty-state-mini {
-      padding: 24px 12px;
-      text-align: center;
-      color: var(--text-light);
-      font-size: 0.9rem;
-      background: var(--lg-card);
-      border: var(--lg-border);
-      box-shadow: var(--lg-shadow);
-      border-radius: 16px;
-    }
-
     .chart-wrap {
       position: relative;
       max-width: 720px;
@@ -1385,8 +1165,6 @@
     body.night .modal input, body.night .modal select { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.14); color: var(--text); }
     body.night .modal input:focus, body.night .modal select:focus { background: rgba(255,255,255,.14); }
     body.night .modal select option { background: #26262c; color: var(--text); }
-    #default-tax-input { border: 1px solid rgba(0,0,0,.15); background: rgba(255,255,255,.5); color: var(--text); }
-    body.night #default-tax-input { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.16); }
     /* Mismos inputs/labels que los modales, para las sub-vistas de Ajustes (Copias
        automáticas, Perfil, etc.) que ya no viven dentro de un .modal sino de una página. */
     .subview-form label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; color: var(--text-light); }
@@ -1410,91 +1188,11 @@
     body.night .login-box { background: rgba(38,38,44,.94); }
     body.night .login-box input { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.14); color: var(--text); }
     /* Detalles */
-    body.night .empty-illustration { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.12); }
     body.night .banner-divider { background: rgba(255,255,255,.12); }
-    body.night .pp-bar-wrap { background: rgba(255,255,255,.10); }
     body.night .month-separator { border-bottom-color: rgba(255,255,255,.10); }
-    body.night .items-bar { background: rgba(255,255,255,.10); }
     body.night .goal-bar { background: rgba(255,255,255,.10); }
     body.night .items-table tr:hover { background: rgba(255,255,255,.06); }
     body.night .chart-controls-row .divider { background: rgba(255,255,255,.12); }
-    /* El documento del PDF SIEMPRE claro (se imprime / exporta a PDF) */
-    body.night .invoice-paper { background: #fff; }
-    body.night .invoice-paper, body.night .invoice-paper * { color: #222 !important; }
-    /* …pero re-asegura texto claro donde el fondo es de color propio (si no, la regla
-       * !important de arriba lo vuelve oscuro e ilegible: cabeceras t2/t3/t5). */
-    body.night .invoice-paper[data-tpl="2"] .inv-top,
-    body.night .invoice-paper[data-tpl="2"] .inv-top * { color: #fff !important; }
-    body.night .invoice-paper[data-tpl="2"] .inv-issuer,
-    body.night .invoice-paper[data-tpl="2"] .inv-issuer *,
-    body.night .invoice-paper[data-tpl="2"] thead tr,
-    body.night .invoice-paper[data-tpl="2"] thead th { color: #7a9ab8 !important; }
-    body.night .invoice-paper[data-tpl="3"] thead tr,
-    body.night .invoice-paper[data-tpl="3"] thead th,
-    body.night .invoice-paper[data-tpl="5"] thead tr,
-    body.night .invoice-paper[data-tpl="5"] thead th { color: #fff !important; }
-
-    /* ── Template 1: Minimalista ── */
-    .invoice-paper[data-tpl="1"] { border-top: 4px solid #222; }
-    .invoice-paper[data-tpl="1"] .inv-title { font-style: normal; font-weight: 200; color: #222; letter-spacing: 5px; font-size: 1.9rem; }
-    .invoice-paper[data-tpl="1"] thead tr { background: #eaeaea; color: #555; }
-    .invoice-paper[data-tpl="1"] .inv-num { color: #222; }
-
-    /* ── Template 2: Moderno oscuro ── */
-    .invoice-paper[data-tpl="2"] { overflow: hidden; padding-top: 0; }
-    .invoice-paper[data-tpl="2"] .inv-top { background: #1e2a3a; margin: 0 -36px 20px; padding: 28px 36px; }
-    @media (max-width: 500px) { .invoice-paper[data-tpl="2"] .inv-top { margin: 0 -20px 20px; padding: 20px 20px; } }
-    .invoice-paper[data-tpl="2"] .inv-logo { background: rgba(255,255,255,.15); color: rgba(255,255,255,.5); }
-    .invoice-paper[data-tpl="2"] .inv-title { font-style: normal; font-weight: 300; color: #fff; letter-spacing: 4px; }
-    .invoice-paper[data-tpl="2"] .inv-issuer, .invoice-paper[data-tpl="2"] .inv-issuer * { color: rgba(255,255,255,.85) !important; }
-    .invoice-paper[data-tpl="2"] thead tr { background: #1e2a3a; color: #7a9ab8; }
-    .invoice-paper[data-tpl="2"] .inv-num { color: #5b95c5; }
-
-    /* ── Template 3: Profesional ── */
-    .invoice-paper[data-tpl="3"] .inv-title { font-style: normal; font-weight: 700; color: #3b5bdb; letter-spacing: 1px; }
-    .invoice-paper[data-tpl="3"] .inv-top { border-bottom: 2.5px solid #3b5bdb; padding-bottom: 16px; margin-bottom: 16px; }
-    .invoice-paper[data-tpl="3"] thead tr { background: #3b5bdb; }
-    .invoice-paper[data-tpl="3"] .inv-num { color: #3b5bdb; }
-    .invoice-paper[data-tpl="3"] tbody tr:nth-child(even) { background: #f0f3ff; }
-
-    /* ── Template 4: Glass ── */
-    .invoice-paper[data-tpl="4"] { background: linear-gradient(145deg, #c8c8d0 0%, #d8d8e0 50%, #c8c8d0 100%); overflow: hidden; padding-top: 0; }
-    .invoice-paper[data-tpl="4"] .inv-top { background: rgba(210,212,218,.65); margin: 0 -36px 20px; padding: 24px 36px; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
-    @media (max-width: 500px) { .invoice-paper[data-tpl="4"] .inv-top { margin: 0 -20px 20px; padding: 18px 20px; } }
-    .invoice-paper[data-tpl="4"] .inv-logo { background: rgba(255,255,255,.5); }
-    .invoice-paper[data-tpl="4"] .inv-title { font-style: normal; font-weight: 700; color: #333; letter-spacing: 1px; font-size: 1.8rem; }
-    .invoice-paper[data-tpl="4"] .inv-num { color: #444; }
-    /* Tabla y totales — blanco como los botones, contrasta con el papel */
-    .invoice-paper[data-tpl="4"] .table-wrap,
-    .invoice-paper[data-tpl="4"] .inv-totals {
-      background: rgba(255,255,255,.82);
-      border: 1px solid rgba(255,255,255,.9);
-      box-shadow: 0 2px 12px rgba(0,0,0,.07), inset 0 1px 0 rgba(255,255,255,1);
-      border-radius: 16px;
-      overflow: hidden;
-    }
-    .invoice-paper[data-tpl="4"] thead tr { background: rgba(180,185,200,.18); color: var(--text); font-weight: 600; }
-    .invoice-paper[data-tpl="4"] thead th { padding: 12px 16px; }
-    .invoice-paper[data-tpl="4"] tbody td { padding: 12px 16px; color: #1a202c; border-bottom: 1px solid rgba(255,255,255,.18); }
-    .invoice-paper[data-tpl="4"] tbody tr:nth-child(odd)  { background: rgba(255,255,255,.55); }
-    .invoice-paper[data-tpl="4"] tbody tr:nth-child(even) { background: rgba(220,222,230,.38); }
-    .invoice-paper[data-tpl="4"] .inv-totals { margin-bottom: 10px; }
-    .invoice-paper[data-tpl="4"] .totals-table tr:not(.total-row) { background: rgba(255,255,255,.55); }
-    .invoice-paper[data-tpl="4"] .totals-table tr.total-row { background: rgba(180,185,200,.18); color: var(--text); font-weight: 700; }
-    .invoice-paper[data-tpl="4"] .totals-table tr.total-row td { border-top: none; }
-    .invoice-paper[data-tpl="4"] .totals-table td { padding: 10px 16px; color: inherit; border-bottom: 1px solid rgba(255,255,255,.18); }
-
-    /* ── Template 1: Minimalista — form header ── */
-    .t1-header { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:12px; }
-    .t1-company strong { font-size:1rem; font-weight:700; color:#222; display:block; margin-bottom:2px; }
-    .t1-company-sub { font-size:.75rem; color:#888; line-height:1.5; }
-    .t1-right { text-align:right; }
-    .t1-invoice-title { font-size:1.7rem; font-weight:200; color:#222; letter-spacing:5px; margin-bottom:6px; }
-    .t1-meta-right { font-size:.8rem; color:#888; line-height:1.9; }
-    .t1-divider { border:none; border-top:1px solid #ddd; margin:10px 0; }
-    .t1-factura-a { font-size:.68rem; text-transform:uppercase; letter-spacing:1px; color:#888; font-weight:600; margin-bottom:5px; }
-    .t1-client-sub { font-size:.82rem; color:#888; line-height:1.5; }
-
     @media print { #bottom-nav { display: none; } }
 
     /* ── Formulario de movimiento ── */
@@ -1860,19 +1558,6 @@
           <button class="btn btn-primary" onclick="savePerfilFromSettings()" style="width:100%;margin-top:6px;">Guardar</button>
         </div>
       </div>
-    </div>
-  </div>
-
-  <!-- Visor de PDF dentro de la app (solo escritorio) — evita salir a otra pestaña -->
-  <div class="modal-overlay" id="modal-pdf-viewer" onclick="if(event.target===this)closePdfViewer()">
-    <div class="modal" style="width:min(900px,96vw);height:92vh;padding:0;overflow:hidden;display:flex;flex-direction:column;">
-      <div style="display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid rgba(0,0,0,.07);flex-shrink:0;">
-        <span id="pdf-viewer-title" style="flex:1;font-weight:600;font-size:1rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">PDF</span>
-        <button onclick="printPdfViewer()" class="btn btn-ghost btn-sm">Imprimir</button>
-        <button onclick="downloadPdfViewer()" class="btn btn-primary btn-sm">Descargar</button>
-        <button onclick="closePdfViewer()" class="btn btn-ghost btn-sm" aria-label="Cerrar">✕</button>
-      </div>
-      <iframe id="pdf-viewer-frame" title="Vista del PDF" style="flex:1;width:100%;border:none;background:#fff;"></iframe>
     </div>
   </div>
 
@@ -4959,43 +4644,6 @@
       return _isIOS || /Android/i.test(navigator.userAgent);
     }
 
-    // ── Visor de PDF dentro de la app (solo escritorio) ──
-    // Muestra el PDF en un iframe dentro de un modal, sin salir de la app. En móvil NO
-    // se usa: el visor embebido de iOS recorta el documento y no deja hacer scroll/zoom
-    // (confirmado en iPhone real) — ahí se entrega el archivo real para compartir/descargar.
-    let _pdfViewerUrl = null;
-    let _pdfViewerName = 'documento.pdf';
-    function _showPDFInApp(doc, filename, title, triggerEl) {
-      if (_pdfViewerUrl) { try { URL.revokeObjectURL(_pdfViewerUrl); } catch (e) {} }
-      _pdfViewerUrl = URL.createObjectURL(doc.output('blob'));
-      _pdfViewerName = filename || 'documento.pdf';
-      const frame = document.getElementById('pdf-viewer-frame');
-      const titleEl = document.getElementById('pdf-viewer-title');
-      if (titleEl) titleEl.textContent = title || filename || 'PDF';
-      if (frame) frame.src = _pdfViewerUrl;
-      const overlay = document.getElementById('modal-pdf-viewer');
-      overlay.classList.add('open');
-      _growModalFromRect(overlay.querySelector('.modal'), triggerEl);
-    }
-    function closePdfViewer() {
-      const overlay = document.getElementById('modal-pdf-viewer');
-      const card = overlay.querySelector('.modal');
-      _shrinkModalToRect(card, () => overlay.classList.remove('open'));
-      const frame = document.getElementById('pdf-viewer-frame');
-      if (frame) frame.src = 'about:blank';
-      if (_pdfViewerUrl) { try { URL.revokeObjectURL(_pdfViewerUrl); } catch (e) {} _pdfViewerUrl = null; }
-    }
-    function downloadPdfViewer() {
-      if (!_pdfViewerUrl) return;
-      const a = document.createElement('a');
-      a.href = _pdfViewerUrl; a.download = _pdfViewerName;
-      document.body.appendChild(a); a.click(); a.remove();
-    }
-    function printPdfViewer() {
-      const frame = document.getElementById('pdf-viewer-frame');
-      try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (e) {}
-    }
-
     // Entrega cualquier archivo (PDF, CSV, JSON de backup...) de la forma que funciona
     // en cada dispositivo. Android SÍ puede descargar en silencio (llega a la carpeta
     // Descargas sin diálogos) — solo iOS bloquea <a download> en apps web instaladas,
@@ -5791,7 +5439,6 @@
     // Cada modal tiene su propia función de cierre (restaura bottom-nav, limpia blob URLs,
     // etc.) — usar solo classList.remove('open') se saltaba esa limpieza (ver MODAL_CLOSE_FNS).
     const MODAL_CLOSE_FNS = {
-      'modal-pdf-viewer': closePdfViewer,
       'modal-password': closePasswordModal,
       'modal-import': () => document.getElementById('modal-import').classList.remove('open'),
       'modal-confirm': closeConfirmModal,
