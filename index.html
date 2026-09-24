@@ -1498,7 +1498,7 @@
     @media print { #bottom-nav { display: none; } }
 
     /* ── Formulario de movimiento ── */
-    .mov-type-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
+    .mov-type-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:14px; }
     .mov-type-btn { padding:12px 8px; border-radius:14px; border:var(--lg-border); background:var(--lg-card); box-shadow:var(--lg-shadow); font-family:inherit; font-size:0.95rem; font-weight:600; color:var(--text); cursor:pointer; }
     .mov-type-btn.active { outline:2px solid var(--blue); }
     .mov-type-btn.in.active, .mov-type-btn.repay.active { outline-color:#2e7d32; }
@@ -1617,6 +1617,7 @@
             <button class="filter-chip status-chip"        id="fchip-loan"    onclick="setTypeFilter('loan')">Sacar prestado</button>
             <button class="filter-chip status-chip"        id="fchip-repay"   onclick="setTypeFilter('repay')">Devolver</button>
             <button class="filter-chip status-chip"        id="fchip-out"     onclick="setTypeFilter('out')">Gastar</button>
+            <button class="filter-chip status-chip"        id="fchip-transfer" onclick="setTypeFilter('transfer')">Transferir</button>
             <button class="filter-chip status-chip"        id="fchip-overdue" onclick="setTypeFilter('overdue')">Vencidos</button>
           </div>
           <div class="history-filter-row" id="year-filter-row" style="display:none;">
@@ -1927,6 +1928,19 @@
       <input id="fund-name" type="text" placeholder="Ej: Vacaciones" onkeydown="if(event.key==='Enter')saveFundModal()">
       <label>Meta (opcional)</label>
       <input id="fund-goal" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00">
+      <label>Fecha para lograrla (opcional)</label>
+      <input id="fund-deadline" type="date">
+      <label>Plan de ahorro (opcional)</label>
+      <div style="display:flex;gap:8px;">
+        <input id="fund-plan-amount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Monto" style="flex:1;">
+        <select id="fund-plan-freq" style="flex:1;">
+          <option value="">Sin plan</option>
+          <option value="daily">Cada día</option>
+          <option value="weekly">Cada semana</option>
+          <option value="biweekly">Cada quincena</option>
+          <option value="monthly">Cada mes</option>
+        </select>
+      </div>
       <label>Color</label>
       <input id="fund-color" type="color" value="#5b8fa8" style="width:56px;height:36px;padding:2px;border-radius:8px;">
       <div class="modal-actions">
@@ -2563,15 +2577,20 @@
     // ──────────────────────────────────────────────────────────────────────
 
     // ═══════════════════════════ BANK: modelo ═══════════════════════════
-    const MOV_TYPES = { in: 'Meter', loan: 'Sacar prestado', repay: 'Devolver', out: 'Gastar' };
+    const MOV_TYPES = { in: 'Meter', loan: 'Sacar prestado', repay: 'Devolver', out: 'Gastar', transfer: 'Transferir' };
     // Mismo tipo, en pretérito — solo para el título de la tarjeta en las listas de
     // movimientos (Movimientos y la página de una cuenta comparten _movementCardHTML).
     // El formulario de crear/editar sigue usando MOV_TYPES (infinitivo, tiene más sentido
     // en un botón de elegir acción).
-    const MOV_TYPES_PAST = { in: 'Metiste', loan: 'Sacaste prestado', repay: 'Devolviste', out: 'Gastaste' };
-    const MOV_SIGN  = { in: 1, loan: -1, repay: 1, out: -1 };   // efecto de cada tipo sobre "Tienes"
-    let funds = [];        // { id, name, goal, color, createdAt }
-    let movements = [];    // { id, fundId, type, amount, date, note, dueDate, loanId }  — más reciente primero
+    const MOV_TYPES_PAST = { in: 'Metiste', loan: 'Sacaste prestado', repay: 'Devolviste', out: 'Gastaste', transfer: 'Transferiste' };
+    // "transfer" vale 0 aquí a propósito: mueve dinero entre DOS cuentas propias, así que
+    // no cambia el total general (fundBalance(null) lo suma con este signo). El efecto real
+    // sobre CADA cuenta (una resta, la otra suma) lo calcula _fundEffect(), no esta tabla.
+    const MOV_SIGN  = { in: 1, loan: -1, repay: 1, out: -1, transfer: 0 };   // efecto de cada tipo sobre "Tienes"
+    const PLAN_FREQ_DAYS  = { daily: 1, weekly: 7, biweekly: 14, monthly: 30 };
+    const PLAN_FREQ_LABEL = { daily: 'día', weekly: 'semana', biweekly: 'quincena', monthly: 'mes' };
+    let funds = [];        // { id, name, goal, color, createdAt, goalDeadline, planAmount, planFreq }
+    let movements = [];    // { id, fundId, type, amount, date, note, dueDate, loanId, toFundId }  — más reciente primero
     let PROFILE = { name: '' };
     let dashboardFundFilter = null;   // null = todos los fondos, o id de fondo
 
@@ -2584,6 +2603,9 @@
         f.goal = Number(f.goal) || 0;
         if (typeof f.color !== 'string') f.color = '';
         if (typeof f.createdAt !== 'string') f.createdAt = '';
+        if (typeof f.goalDeadline !== 'string') f.goalDeadline = '';
+        f.planAmount = Number(f.planAmount) || 0;
+        if (!PLAN_FREQ_DAYS[f.planFreq]) f.planFreq = '';
         return f;
       }).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '') || (a.id > b.id ? 1 : -1));
     }
@@ -2598,6 +2620,7 @@
         if (typeof m.note !== 'string') m.note = '';
         if (typeof m.dueDate !== 'string') m.dueDate = '';
         m.loanId = m.type === 'repay' ? String(m.loanId || '') : '';
+        m.toFundId = m.type === 'transfer' ? String(m.toFundId || '') : '';
         return m;
       });
     }
@@ -2618,18 +2641,56 @@
     function isLoanOverdue(m, today = todayISO()) {
       return m.type === 'loan' && !!m.dueDate && m.dueDate < today && !isLoanSettled(m);
     }
-    // Tienes / Debes de un fondo (fundId null → todos los fondos juntos)
+    // Efecto de UN movimiento sobre UNA cuenta puntual. Para todo tipo normal es el de
+    // siempre (MOV_SIGN); para "transfer" depende de qué lado de la transferencia es esta
+    // cuenta (origen: resta; destino: suma) — por eso "transfer" no tiene un signo fijo.
+    function _fundEffect(m, fundId) {
+      if (m.type === 'transfer') {
+        if (m.fundId === fundId) return -m.amount;
+        if (m.toFundId === fundId) return m.amount;
+        return 0;
+      }
+      return MOV_SIGN[m.type] * m.amount;
+    }
+    // Tienes / Debes de un fondo (fundId null → todos los fondos juntos, ahí una
+    // transferencia entre dos cuentas propias no cambia nada — ver MOV_SIGN.transfer)
     function fundBalance(fundId) {
       let have = 0, owed = 0;
       for (const m of movements) {
-        if (fundId && m.fundId !== fundId) continue;
-        have += MOV_SIGN[m.type] * m.amount;
+        if (fundId) {
+          if (m.fundId !== fundId && m.toFundId !== fundId) continue;
+          have += _fundEffect(m, fundId);
+        } else {
+          have += MOV_SIGN[m.type] * m.amount;
+        }
         if (m.type === 'loan') owed += loanBalance(m).balance;
       }
       return { have: round2(have), owed: round2(owed) };
     }
     function fundById(id) { return funds.find(f => f.id === id) || null; }
     function fundName(id) { return fundById(id)?.name || 'Sin cuenta'; }
+    // Cuánto falta y qué tan seguido hay que ahorrar para llegar a la meta en la fecha elegida.
+    // null si no aplica (sin meta, sin fecha, o ya la cumpliste).
+    function _goalPaceInfo(f) {
+      if (!(f.goal > 0) || !f.goalDeadline) return null;
+      const remaining = round2(f.goal - fundBalance(f.id).have);
+      if (remaining <= 0) return null;
+      const daysLeft = Math.ceil((new Date(f.goalDeadline + 'T12:00:00') - new Date(todayISO() + 'T12:00:00')) / 86400000);
+      if (daysLeft <= 0) return { remaining, overdue: true };
+      return {
+        remaining, overdue: false, daysLeft,
+        monthly: round2(remaining / Math.max(1, daysLeft / 30.44)),
+        weekly: round2(remaining / Math.max(1, daysLeft / 7))
+      };
+    }
+    // Vas adelantado/atrasado de tu plan de ahorro (monto fijo cada tanto, desde que se creó
+    // la cuenta). null si no hay plan configurado.
+    function _planPaceInfo(f) {
+      if (!(f.planAmount > 0) || !f.planFreq) return null;
+      const days = Math.max(0, Math.floor((new Date(todayISO() + 'T12:00:00') - new Date((f.createdAt || todayISO()) + 'T12:00:00')) / 86400000));
+      const expected = round2(Math.floor(days / PLAN_FREQ_DAYS[f.planFreq]) * f.planAmount);
+      return { expected, diff: round2(fundBalance(f.id).have - expected), freqLabel: PLAN_FREQ_LABEL[f.planFreq], amount: f.planAmount };
+    }
     // Préstamos con saldo pendiente de un fondo (para el selector de "Devolver")
     function openLoansOf(fundId) {
       return movements.filter(m => m.type === 'loan' && m.fundId === fundId && !isLoanSettled(m));
@@ -2643,7 +2704,7 @@
       return movements.filter(m => {
         const d = new Date(m.date + 'T12:00:00');
         if (!(d >= range.startDate && d <= range.endDate)) return false;
-        if (dashboardFundFilter && m.fundId !== dashboardFundFilter) return false;
+        if (dashboardFundFilter && m.fundId !== dashboardFundFilter && m.toFundId !== dashboardFundFilter) return false;
         return true;
       });
     }
@@ -2697,8 +2758,10 @@
     }
     function deleteFund(id) {
       funds = funds.filter(f => f.id !== id);
-      const gone = movements.filter(m => m.fundId === id).map(m => m.id);
-      movements = movements.filter(m => m.fundId !== id);
+      // fundId === id: movimientos propios de esta cuenta. toFundId === id: transferencias
+      // que le entraban desde otra cuenta — sin destino, no tienen sentido; se borran también.
+      const gone = movements.filter(m => m.fundId === id || m.toFundId === id).map(m => m.id);
+      movements = movements.filter(m => m.fundId !== id && m.toFundId !== id);
       saveFunds(); saveMovements();
       _deleteFundCloud(id); gone.forEach(_deleteMovementCloud);
     }
@@ -2706,7 +2769,10 @@
     // Chequeo mínimo de la lógica de saldos — correr en la consola del navegador: _selfCheck()
     function _selfCheck() {
       const F = funds, M = movements;   // no tocar los datos reales
-      funds = [{ id: 'f1', name: 'Test', goal: 0, color: '', createdAt: '2026-01-01' }];
+      funds = [
+        { id: 'f1', name: 'Test', goal: 0, color: '', createdAt: '2026-01-01' },
+        { id: 'f2', name: 'Test2', goal: 0, color: '', createdAt: '2026-01-01' }
+      ];
       movements = [
         { id: 'm1', fundId: 'f1', type: 'in',   amount: 1000, date: '2026-01-01', note: '', dueDate: '', loanId: '' },
         { id: 'm2', fundId: 'f1', type: 'loan', amount: 100,  date: '2026-01-02', note: '', dueDate: '2026-01-10', loanId: '' }
@@ -2722,6 +2788,9 @@
         console.assert(fundBalance('f1').owed === 100, 'quitar la devolución vuelve a deber 100');
         movements.push({ id: 'm4', fundId: 'f1', type: 'out', amount: 50, date: '2026-01-04', note: '', dueDate: '', loanId: '' });
         console.assert(fundBalance('f1').have === 850 && fundBalance('f1').owed === 100, 'gastar no genera deuda');
+        movements.push({ id: 'm5', fundId: 'f1', toFundId: 'f2', type: 'transfer', amount: 200, date: '2026-01-05', note: '', dueDate: '', loanId: '' });
+        console.assert(fundBalance('f1').have === 650 && fundBalance('f2').have === 200, 'transferir: le resta a origen y le suma a destino', fundBalance('f1'), fundBalance('f2'));
+        console.assert(fundBalance(null).have === 850, 'transferir entre cuentas propias no cambia el total', fundBalance(null));
         console.log('_selfCheck OK');
       } finally { funds = F; movements = M; }
     }
@@ -3057,16 +3126,30 @@
         <div class="banner-stat banner-pending"><span class="lbl">Debes</span><span class="val">${formatMoney(owed)}</span></div>`;
     }
 
-    // HTML de UNA tarjeta de movimiento (la usan la lista general y la página de un fondo)
-    function _movementCardHTML(m, today, { animate = false, delay = 0 } = {}) {
+    // HTML de UNA tarjeta de movimiento (la usan la lista general y la página de un fondo).
+    // viewFundId: en qué cuenta se está mostrando (null = lista general de Movimientos) —
+    // solo importa para "transfer", que cambia de signo/subtítulo según de qué lado se vea.
+    function _movementCardHTML(m, today, { animate = false, delay = 0, viewFundId = null } = {}) {
       const isLoan = m.type === 'loan';
+      const isTransfer = m.type === 'transfer';
       const bal = isLoan ? loanBalance(m) : null;
       const settled = isLoan && bal.balance <= 0;
       const overdue = isLoan && !settled && m.dueDate && m.dueDate < today;
       const badge = overdue
         ? ` <span class="badge-overdue" style="display:inline-block;background:#ffebee;color:#c62828;font-size:0.7rem;font-weight:700;padding:1px 7px;border-radius:10px;vertical-align:middle;">Vencido</span>`
         : settled ? ` <span style="display:inline-block;background:#e8f5e9;color:#2e7d32;font-size:0.7rem;font-weight:700;padding:1px 7px;border-radius:10px;vertical-align:middle;">Devuelto</span>` : '';
-      const positive = MOV_SIGN[m.type] > 0;
+      // positive === null → ni entrada ni salida (transferencia vista desde la lista general,
+      // sin una cuenta de referencia): se muestra en neutro, sin signo +/−.
+      let positive, fundLine;
+      if (isTransfer) {
+        positive = viewFundId === m.toFundId ? true : viewFundId === m.fundId ? false : null;
+        fundLine = `${escapeHTML(fundName(m.fundId))} → ${escapeHTML(fundName(m.toFundId))}`;
+      } else {
+        positive = MOV_SIGN[m.type] > 0;
+        fundLine = escapeHTML(fundName(m.fundId));
+      }
+      const amtColor = positive === null ? 'var(--blue)' : (positive ? '#2e7d32' : '#c62828');
+      const amtPrefix = positive === null ? '' : (positive ? '+' : '−');
       const cardStyle = animate ? `animation-delay:${delay}ms;` : 'animation:none;';
       const sub = isLoan && !settled
         ? `<div class="badge-pulse" style="color:#c0540a;font-size:0.8rem;font-weight:600;margin-top:2px;">Debes ${formatMoney(bal.balance)}${m.dueDate ? ' · devolver antes del ' + formatDateDisplay(m.dueDate) : ''}</div>`
@@ -3076,11 +3159,11 @@
         <div class="mov-card" data-card-id="${id}" style="${cardStyle}">
           <div class="mov-card-info" data-action="edit" data-id="${id}" style="cursor:pointer;">
             <div class="mov-card-num">${MOV_TYPES_PAST[m.type]}${badge}</div>
-            <div class="mov-card-client">${escapeHTML(fundName(m.fundId))}${m.note ? ' · ' + escapeHTML(m.note) : ''}</div>
+            <div class="mov-card-client">${fundLine}${m.note ? ' · ' + escapeHTML(m.note) : ''}</div>
             <div class="mov-card-date" style="color:var(--text-light);font-size:0.82rem;margin-top:2px;">${formatDateDisplay(m.date)}</div>
             ${sub}
           </div>
-          <div class="mov-card-total" data-action="edit" data-id="${id}" style="cursor:pointer;color:${positive ? '#2e7d32' : '#c62828'};">${positive ? '+' : '−'}${formatMoney(m.amount)}</div>
+          <div class="mov-card-total" data-action="edit" data-id="${id}" style="cursor:pointer;color:${amtColor};">${amtPrefix}${formatMoney(m.amount)}</div>
           <div class="mov-card-actions">
             ${isLoan && !settled ? `<button class="btn btn-success btn-sm" data-action="repay" data-id="${id}">Devolver</button>` : ''}
             <div class="overflow-wrap">
@@ -3091,7 +3174,8 @@
     }
 
     // Pinta una lista de movimientos (ya ordenada) en `el`, con separadores de mes.
-    function _renderMovementList(list, el, emptyHTML) {
+    // viewFundId: se lo pasa directo a _movementCardHTML — ver ahí (null = lista general).
+    function _renderMovementList(list, el, emptyHTML, viewFundId = null) {
       if (list.length === 0) { el.innerHTML = `<div class="empty-state">${emptyHTML}</div>`; _animateListEntrance = false; return; }
       const showMonthSeparators = historySortMode === 'date';
       const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -3105,7 +3189,7 @@
           lastMonthKey = monthKey;
           parts.push(`<div class="month-separator"${_animateListEntrance ? '' : ' style="animation:none;"'}>${MONTHS[d.getMonth()]} ${d.getFullYear()}</div>`);
         }
-        parts.push(_movementCardHTML(m, today, { animate: _animateListEntrance, delay: Math.min(idx++, 7) * 30 }));
+        parts.push(_movementCardHTML(m, today, { animate: _animateListEntrance, delay: Math.min(idx++, 7) * 30, viewFundId }));
       }
       el.innerHTML = parts.join('');
       _animateListEntrance = false;
@@ -3249,8 +3333,17 @@
       const extraBoxes = (f.goal > 0 ? [`<div class="banner-stat"><span class="lbl">Meta ${formatMoney(f.goal)}</span><span class="val">${pct.toFixed(0)}%</span></div>`] : [])
         .concat(spent > 0 ? [`<div class="banner-stat banner-pending"><span class="lbl">Gastaste</span><span class="val">${formatMoney(spent)}</span></div>`] : [])
         .map(box => `<div class="banner-divider"></div>${box}`).join('');
+      const pace = _goalPaceInfo(f);
+      const paceHTML = !pace ? '' : pace.overdue
+        ? `<div class="badge-pulse" style="color:#c0540a;font-size:0.85rem;font-weight:600;margin:2px 0 10px;">La meta venció el ${formatDateDisplay(f.goalDeadline)} — todavía te faltan ${formatMoney(pace.remaining)}</div>`
+        : `<div style="font-size:0.85rem;color:var(--text-light);margin:2px 0 10px;">Te faltan ${formatMoney(pace.remaining)} para el ${formatDateDisplay(f.goalDeadline)} — unos ${formatMoney(pace.monthly)} por mes (${formatMoney(pace.weekly)} por semana)</div>`;
+      const plan = _planPaceInfo(f);
+      const planHTML = !plan ? '' : `<div style="font-size:0.85rem;font-weight:600;color:${plan.diff >= 0 ? '#2e7d32' : '#c0540a'};margin:2px 0 10px;">Plan: ${formatMoney(plan.amount)} cada ${plan.freqLabel} — vas ${plan.diff >= 0 ? formatMoney(plan.diff) + ' adelantado' : formatMoney(Math.abs(plan.diff)) + ' atrasado'}</div>`;
       document.getElementById('fund-page-title').textContent = f.name;
       document.getElementById('fund-page-menu-btn').dataset.id = f.id;
+      // Transferencias: esta cuenta puede ser origen (fundId) O destino (toFundId) — ambas
+      // cuentan como "movimientos de esta cuenta" para la lista y la gráfica de abajo.
+      const list = sortMovementsForDisplay(movements.filter(m => m.fundId === f.id || m.toFundId === f.id));
       document.getElementById('fund-page-stats').innerHTML = `
         <div class="history-banner" style="display:flex;animation:none;">
           <div class="banner-stat banner-paid"><span class="lbl">Tienes</span><span class="val">${formatMoney(have)}</span></div>
@@ -3258,9 +3351,12 @@
           <div class="banner-stat banner-pending"><span class="lbl">Debes</span><span class="val">${formatMoney(owed)}</span></div>
           ${extraBoxes}
         </div>
-        ${f.goal > 0 ? `<div class="goal-bar" style="margin:0 0 14px;"><span style="width:${pct.toFixed(1)}%;background:${escapeHTML(f.color || '#5b8fa8')};"></span></div>` : ''}`;
-      const list = sortMovementsForDisplay(movements.filter(m => m.fundId === f.id));
-      _renderMovementList(list, document.getElementById('fund-movement-list'), '<p>Esta cuenta no tiene movimientos todavía.</p>');
+        ${f.goal > 0 ? `<div class="goal-bar" style="margin:0 0 6px;"><span style="width:${pct.toFixed(1)}%;background:${escapeHTML(f.color || '#5b8fa8')};"></span></div>` : ''}
+        ${paceHTML}${planHTML}
+        ${list.length > 0 ? `<div class="chart-wrap" style="margin:0 0 4px;"><canvas id="fund-chart" class="chart-canvas"></canvas></div>
+        <div style="font-size:0.78rem;color:var(--text-light);margin-bottom:10px;">Cómo ha crecido esta cuenta</div>` : ''}`;
+      if (list.length > 0) setTimeout(() => drawLineChart('fund-chart', _fundBalanceHistory(f.id)), 0);
+      _renderMovementList(list, document.getElementById('fund-movement-list'), '<p>Esta cuenta no tiene movimientos todavía.</p>', f.id);
     }
 
     // ── Modal nuevo / editar fondo ──
@@ -3271,6 +3367,9 @@
       document.getElementById('fund-modal-title').textContent = f ? 'Editar cuenta' : 'Nueva cuenta';
       document.getElementById('fund-name').value = f?.name || '';
       document.getElementById('fund-goal').value = f?.goal ? f.goal : '';
+      document.getElementById('fund-deadline').value = f?.goalDeadline || '';
+      document.getElementById('fund-plan-amount').value = f?.planAmount ? f.planAmount : '';
+      document.getElementById('fund-plan-freq').value = f?.planFreq || '';
       document.getElementById('fund-color').value = f?.color || '#5b8fa8';
       const overlay = document.getElementById('modal-fund');
       overlay.classList.add('open');
@@ -3286,12 +3385,21 @@
       const name = document.getElementById('fund-name').value.trim();
       if (!name) { showToast('Ponle un nombre a la cuenta', 'error'); return; }
       const goal = round2(document.getElementById('fund-goal').value);
+      const goalDeadline = document.getElementById('fund-deadline').value || '';
+      const planAmount = round2(document.getElementById('fund-plan-amount').value);
+      const planFreq = document.getElementById('fund-plan-freq').value || '';
       const color = document.getElementById('fund-color').value || '';
+      // Si editas la meta (p.ej. la bajas) y con lo que ya tienes ahora te alcanza, también
+      // cuenta como "llegaste" — no solo al meter/devolver dinero (ver _checkGoalReached).
+      const prevFund = _fundModalId ? fundById(_fundModalId) : null;
+      const prevReached = !!prevFund && prevFund.goal > 0 && fundBalance(prevFund.id).have >= prevFund.goal;
       if (_fundModalId) {
-        updateFund(_fundModalId, { name, goal, color });
+        updateFund(_fundModalId, { name, goal, goalDeadline, planAmount, planFreq, color });
         showToast('Cuenta actualizada', 'success');
+        const nowReached = goal > 0 && fundBalance(_fundModalId).have >= goal;
+        if (!prevReached && nowReached) showToast(`¡Llegaste a tu meta de ${name}!`, 'success', { duration: 6000 });
       } else {
-        if (!addFund({ name, goal, color })) { showToast('No se pudo guardar (almacenamiento lleno)', 'error'); return; }
+        if (!addFund({ name, goal, goalDeadline, planAmount, planFreq, color })) { showToast('No se pudo guardar (almacenamiento lleno)', 'error'); return; }
         showToast('Cuenta creada', 'success');
       }
       closeFundModal();
@@ -3301,7 +3409,7 @@
     async function confirmDeleteFund(id, triggerEl) {
       const f = fundById(id);
       if (!f) return;
-      const n = movements.filter(m => m.fundId === id).length;
+      const n = movements.filter(m => m.fundId === id || m.toFundId === id).length;
       const msg = `¿Eliminar la cuenta "${f.name}"?` + (n ? `\n\nSe borran también sus ${n} movimiento(s). Se descargará un backup antes, por seguridad.` : '');
       if (!(await _confirmDialog(msg, { confirmLabel: 'Eliminar', danger: true }, triggerEl))) return;
       if (n) downloadAutoBackup('antes-de-borrar-cuenta');
@@ -3439,9 +3547,9 @@
         if (historyTypeFilter === 'overdue') { if (!isLoanOverdue(m, today)) return false; }
         else if (historyTypeFilter !== 'all' && m.type !== historyTypeFilter) return false;
         if (historyYearFilter && (m.date || '').slice(0, 4) !== historyYearFilter) return false;
-        if (historyFundFilter && m.fundId !== historyFundFilter) return false;
+        if (historyFundFilter && m.fundId !== historyFundFilter && m.toFundId !== historyFundFilter) return false;
         if (searchQuery) {
-          const hay = [m.note, fundName(m.fundId), MOV_TYPES[m.type], String(m.amount)].join(' ').toLowerCase();
+          const hay = [m.note, fundName(m.fundId), fundName(m.toFundId), MOV_TYPES[m.type], String(m.amount)].join(' ').toLowerCase();
           if (!hay.includes(searchQuery)) return false;
         }
         return true;
@@ -3456,7 +3564,7 @@
 
     // ── Formulario de movimiento ──
     let editingMovementId = null;   // null = crear, id = editar
-    let formType = 'in', formFundId = '', formAmount = '', formDate = '', formNote = '', formDueDate = '', formLoanId = '';
+    let formType = 'in', formFundId = '', formAmount = '', formDate = '', formNote = '', formDueDate = '', formLoanId = '', formToFundId = '';
     let hasUnsavedChanges = false;
 
     function setUnsavedChanges(value) {
@@ -3484,15 +3592,19 @@
       if (!formFundId || !fundById(formFundId)) formFundId = funds[0].id;
       const loans = openLoansOf(formFundId);
       if (formType === 'repay' && !loans.some(l => l.id === formLoanId)) formLoanId = loans[0]?.id || '';
-      const typeBtns = Object.entries(MOV_TYPES).map(([t, label]) =>
-        `<button type="button" class="mov-type-btn ${t}${formType === t ? ' active' : ''}" onclick="setFormType('${t}')">${label}</button>`).join('');
+      const otherFunds = funds.filter(f => f.id !== formFundId);
+      if (formType === 'transfer' && !otherFunds.some(f => f.id === formToFundId)) formToFundId = otherFunds[0]?.id || '';
+      // "Transferir" solo tiene sentido con 2+ cuentas — sin eso ni se muestra el botón.
+      const typeBtns = Object.entries(MOV_TYPES)
+        .filter(([t]) => t !== 'transfer' || otherFunds.length > 0)
+        .map(([t, label]) => `<button type="button" class="mov-type-btn ${t}${formType === t ? ' active' : ''}" onclick="setFormType('${t}')">${label}</button>`).join('');
       const loanLabel = l => `${formatMoney(loanBalance(l).balance)} · ${formatDateDisplay(l.date)}${l.note ? ' · ' + escapeHTML(l.note) : ''}`;
       el.innerHTML = `
         <div class="settings-section subview-form" style="padding:16px 18px;">
           <label>Tipo</label>
           <div class="mov-type-grid">${typeBtns}</div>
           <label>Cuenta</label>
-          <select id="mf-fund" onchange="formFundId=this.value;formLoanId='';_formChanged();renderCreateForm();">
+          <select id="mf-fund" onchange="formFundId=this.value;formLoanId='';if(formToFundId===this.value)formToFundId='';_formChanged();renderCreateForm();">
             ${funds.map(f => `<option value="${f.id}"${f.id === formFundId ? ' selected' : ''}>${escapeHTML(f.name)}</option>`).join('')}
           </select>
           <label>Monto</label>
@@ -3508,6 +3620,11 @@
           <select id="mf-loan" onchange="formLoanId=this.value;_formChanged();">
             ${loans.map(l => `<option value="${l.id}"${l.id === formLoanId ? ' selected' : ''}>${loanLabel(l)}</option>`).join('')}
           </select>`) : ''}
+          ${formType === 'transfer' ? `
+          <label>A qué cuenta</label>
+          <select id="mf-tofund" onchange="formToFundId=this.value;_formChanged();">
+            ${otherFunds.map(f => `<option value="${f.id}"${f.id === formToFundId ? ' selected' : ''}>${escapeHTML(f.name)}</option>`).join('')}
+          </select>` : ''}
           <label>Nota (opcional)</label>
           <input id="mf-note" type="text" placeholder="Ej: boletos de avión" value="${escapeHTML(formNote)}" oninput="formNote=this.value;_formChanged();">
         </div>`;
@@ -3531,6 +3648,9 @@
         const own = previous && previous.type === 'repay' && previous.loanId === loan.id ? previous.amount : 0;
         if (amount > loanBalance(loan).balance + own) showToast('Estás devolviendo más de lo que debes en ese préstamo', 'info', { duration: 4500 });
       }
+      if (formType === 'transfer') {
+        if (!formToFundId || formToFundId === formFundId || !fundById(formToFundId)) throw new Error('Elige a qué cuenta transferir.');
+      }
       return {
         fundId: formFundId,
         type: formType,
@@ -3538,13 +3658,30 @@
         date: formDate || todayISO(),
         note: (formNote || '').trim(),
         dueDate: formType === 'loan' ? (formDueDate || '') : '',
-        loanId: formType === 'repay' ? formLoanId : ''
+        loanId: formType === 'repay' ? formLoanId : '',
+        toFundId: formType === 'transfer' ? formToFundId : ''
       };
+    }
+
+    // Avisa con un toast si esta cuenta acaba de cruzar su meta con el movimiento recién
+    // guardado (antes no la tenía cumplida, ahora sí) — ver también saveFundModal, que
+    // cubre el otro caso: bajar la meta hasta que lo que ya tienes te alcance.
+    function _checkGoalReached(fundId, beforeHave) {
+      const f = fundById(fundId);
+      if (!f || !(f.goal > 0)) return;
+      if (beforeHave < f.goal && fundBalance(fundId).have >= f.goal) {
+        showToast(`¡Llegaste a tu meta de ${f.name}!`, 'success', { duration: 6000 });
+      }
     }
 
     function saveCurrentMovement(triggerEl) {
       try {
         const m = buildMovementObject();
+        // Una transferencia afecta DOS cuentas (le resta a una, le suma a la otra) — cualquiera
+        // de las dos puede ser la que recién cruza su meta.
+        const affectedFundIds = m.type === 'transfer' ? [m.fundId, m.toFundId] : [m.fundId];
+        const beforeHave = {};
+        affectedFundIds.forEach(id => { beforeHave[id] = fundBalance(id).have; });
         let ok;
         if (editingMovementId && movements.some(x => x.id === editingMovementId)) {
           ok = updateMovement(editingMovementId, m);
@@ -3555,6 +3692,7 @@
           if (ok) showToast('Movimiento guardado', 'success');
         }
         if (!ok) { showToast('No se pudo guardar (almacenamiento lleno). Tus cambios siguen en el formulario.', 'error'); return; }
+        affectedFundIds.forEach(id => _checkGoalReached(id, beforeHave[id]));
         closeCreate(triggerEl);
       } catch (e) {
         showToast('Error al guardar: ' + e.message, 'error');
@@ -3566,7 +3704,7 @@
       editingMovementId = null;
       formType = 'in';
       formFundId = presetFundId || (typeof historyFundFilter !== 'undefined' && historyFundFilter) || formFundId || '';
-      formAmount = ''; formDate = todayISO(); formNote = ''; formDueDate = ''; formLoanId = '';
+      formAmount = ''; formDate = todayISO(); formNote = ''; formDueDate = ''; formLoanId = ''; formToFundId = '';
       setUnsavedChanges(false);
       renderCreateForm();
       showView('create', triggerEl);
@@ -3586,7 +3724,7 @@
       if (!m) return;
       editingMovementId = id;
       formType = m.type; formFundId = m.fundId; formAmount = String(m.amount); formDate = m.date;
-      formNote = m.note || ''; formDueDate = m.dueDate || ''; formLoanId = m.loanId || '';
+      formNote = m.note || ''; formDueDate = m.dueDate || ''; formLoanId = m.loanId || ''; formToFundId = m.toFundId || '';
       setUnsavedChanges(false);
       renderCreateForm();
       showView('create', triggerEl);
@@ -3614,7 +3752,7 @@
     function _saveDraftNow() {
       _draftTimer = null;
       try {
-        sessionStorage.setItem('bank_draft', JSON.stringify({ editingMovementId, formType, formFundId, formAmount, formDate, formNote, formDueDate, formLoanId }));
+        sessionStorage.setItem('bank_draft', JSON.stringify({ editingMovementId, formType, formFundId, formAmount, formDate, formNote, formDueDate, formLoanId, formToFundId }));
       } catch (e) { console.warn('Could not save draft:', e); }
     }
     function loadDraft() {
@@ -3629,6 +3767,7 @@
         formNote = d.formNote || '';
         formDueDate = d.formDueDate || '';
         formLoanId = d.formLoanId || '';
+        formToFundId = d.formToFundId || '';
         return true;
       } catch (e) { console.warn('Could not load draft:', e); return false; }
     }
@@ -3854,7 +3993,9 @@
       const t = { in: 0, loan: 0, repay: 0, out: 0, count: list.length, overdueCount: 0, overdueSum: 0 };
       const today = todayISO();
       for (const m of list) {
-        t[m.type] += m.amount;
+        // Transferir no es ni entrada ni salida real (mueve dinero entre cuentas propias) —
+        // no cuenta en ninguna de las 4 casillas de "Movimientos del período".
+        if (m.type !== 'transfer') t[m.type] += m.amount;
         if (isLoanOverdue(m, today)) { t.overdueCount++; t.overdueSum += loanBalance(m).balance; }
       }
       t.net = round2(t.in + t.repay - t.loan - t.out);
@@ -3866,21 +4007,50 @@
       const range = dashboardDateRange();
       if (!range) return [];
       const inRange = new Set(list.map(m => m.id));
+      // Con un fondo filtrado, una transferencia vale distinto según de qué lado esté ese
+      // fondo (_fundEffect) — sin filtro (todas las cuentas juntas) vale 0, ver MOV_SIGN.
+      const effect = m => dashboardFundFilter ? _fundEffect(m, dashboardFundFilter) : MOV_SIGN[m.type] * m.amount;
       // Arranque: todo lo anterior al período (respetando el filtro de fondo)
       let running = 0;
       for (const m of movements) {
         if (inRange.has(m.id)) continue;
-        if (dashboardFundFilter && m.fundId !== dashboardFundFilter) continue;
-        if (new Date(m.date + 'T12:00:00') < range.startDate) running += MOV_SIGN[m.type] * m.amount;
+        if (dashboardFundFilter && m.fundId !== dashboardFundFilter && m.toFundId !== dashboardFundFilter) continue;
+        if (new Date(m.date + 'T12:00:00') < range.startDate) running += effect(m);
       }
       const monthLabels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
       const map = {}, out = [];
       [...list].sort((a, b) => a.date.localeCompare(b.date) || (a.id > b.id ? 1 : -1)).forEach(m => {
-        running += MOV_SIGN[m.type] * m.amount;
+        running += effect(m);
         const d = new Date(m.date + 'T12:00:00');
         const key = range.groupByMonth ? `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}` : m.date;
         if (!map[key]) {
           map[key] = range.groupByMonth
+            ? { month: monthLabels[d.getMonth()] + ' ' + String(d.getFullYear()).slice(2), sortKey: key, revenue: 0 }
+            : { day: key.slice(5), sortKey: key, revenue: 0 };
+          out.push(map[key]);
+        }
+        map[key].revenue = round2(running);
+      });
+      return out;
+    }
+    // Evolución de "Tienes" en UNA cuenta a lo largo de toda su historia (no depende del
+    // período/filtro del Resumen — se usa en la gráfica de la página de la cuenta). Agrupa
+    // por mes si la cuenta lleva más de ~2 meses de movimientos, si no por día.
+    function _fundBalanceHistory(fundId) {
+      const list = [...movements].filter(m => m.fundId === fundId || m.toFundId === fundId)
+        .sort((a, b) => a.date.localeCompare(b.date) || (a.id > b.id ? 1 : -1));
+      if (list.length === 0) return [];
+      const spanDays = (new Date(todayISO() + 'T12:00:00') - new Date(list[0].date + 'T12:00:00')) / 86400000;
+      const groupByMonth = spanDays > 60;
+      const monthLabels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+      const map = {}, out = [];
+      let running = 0;
+      list.forEach(m => {
+        running += _fundEffect(m, fundId);
+        const d = new Date(m.date + 'T12:00:00');
+        const key = groupByMonth ? `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}` : m.date;
+        if (!map[key]) {
+          map[key] = groupByMonth
             ? { month: monthLabels[d.getMonth()] + ' ' + String(d.getFullYear()).slice(2), sortKey: key, revenue: 0 }
             : { day: key.slice(5), sortKey: key, revenue: 0 };
           out.push(map[key]);
@@ -4404,17 +4574,23 @@
         doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(40);
       };
       header();
-      const list = movements.filter(m => m.fundId === f.id).sort((a, b) => a.date.localeCompare(b.date) || (a.id > b.id ? 1 : -1));
+      // fundId===f.id (origen) o toFundId===f.id (destino de una transferencia) — ambas
+      // cuentan como movimientos "de esta cuenta" para el estado de cuenta.
+      const list = movements.filter(m => m.fundId === f.id || m.toFundId === f.id).sort((a, b) => a.date.localeCompare(b.date) || (a.id > b.id ? 1 : -1));
       let running = 0;
       list.forEach(m => {
         if (y > 740) { doc.addPage(); y = 55; header(); }
-        running += MOV_SIGN[m.type] * m.amount;
+        const eff = _fundEffect(m, f.id);
+        running += eff;
         doc.text(formatDateDisplay(m.date), margin, y);
         // Se corta a una sola línea (el PDF no pagina horizontalmente) — "…" avisa que
         // hay más texto; la nota completa sigue intacta en la app/Firestore.
-        const _movLines = doc.splitTextToSize(MOV_TYPES[m.type] + (m.note ? ' — ' + m.note : ''), 200);
+        const movLabel = m.type === 'transfer'
+          ? (m.fundId === f.id ? 'Transferiste a ' + fundName(m.toFundId) : 'Recibiste de ' + fundName(m.fundId))
+          : MOV_TYPES[m.type];
+        const _movLines = doc.splitTextToSize(movLabel + (m.note ? ' — ' + m.note : ''), 200);
         doc.text(_movLines[0] + (_movLines.length > 1 ? '…' : ''), margin + 100, y);
-        doc.text(formatMoneyForPDF(m.amount), MOV_SIGN[m.type] > 0 ? W - margin - 150 : W - margin - 80, y, { align: 'right' });
+        doc.text(formatMoneyForPDF(m.amount), eff > 0 ? W - margin - 150 : W - margin - 80, y, { align: 'right' });
         doc.text(formatMoneyForPDF(round2(running)), W - margin, y, { align: 'right' });
         y += 14;
       });
@@ -5144,9 +5320,9 @@
     function exportMovementsCSV() {
       const list = getDashboardMovements();
       if (list.length === 0) { showToast('No hay movimientos en este período para exportar', 'info'); return; }
-      const rows = [['Fecha', 'Cuenta', 'Tipo', 'Monto', 'Nota', 'Devolver antes del', 'Saldo del préstamo']];
+      const rows = [['Fecha', 'Cuenta', 'Tipo', 'Cuenta destino', 'Monto', 'Nota', 'Devolver antes del', 'Saldo del préstamo']];
       sortMovementsForDisplay(list).forEach(m => rows.push([
-        m.date, fundName(m.fundId), MOV_TYPES[m.type], m.amount.toFixed(2), m.note, m.dueDate,
+        m.date, fundName(m.fundId), MOV_TYPES[m.type], m.type === 'transfer' ? fundName(m.toFundId) : '', m.amount.toFixed(2), m.note, m.dueDate,
         m.type === 'loan' ? loanBalance(m).balance.toFixed(2) : ''
       ]));
       _downloadCSV(rows, `bank-movimientos-${todayISO()}.csv`);
