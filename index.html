@@ -3208,10 +3208,7 @@
           ${extraBoxes}
         </div>
         ${f.goal > 0 ? `<div class="goal-bar" style="margin:0 0 6px;"><span style="width:${pct.toFixed(1)}%;background:${escapeHTML(f.color || '#5b8fa8')};"></span></div>` : ''}
-        ${paceHTML}${planHTML}
-        ${list.length > 0 ? `<div class="chart-wrap" style="margin:0 0 4px;"><canvas id="fund-chart" class="chart-canvas"></canvas></div>
-        <div style="font-size:0.78rem;color:var(--text-light);margin-bottom:10px;">Cómo ha crecido esta cuenta</div>` : ''}`;
-      if (list.length > 0) setTimeout(() => drawLineChart('fund-chart', _fundBalanceHistory(f.id)), 0);
+        ${paceHTML}${planHTML}`;
       _renderMovementList(list, document.getElementById('fund-movement-list'), '<p>Esta cuenta no tiene movimientos todavía.</p>', f.id);
     }
 
