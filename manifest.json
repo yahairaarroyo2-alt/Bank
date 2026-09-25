@@ -1,7 +1,7 @@
 {
   "name": "Bank",
   "short_name": "Bank",
-  "description": "Ahorro personal: fondos, metas y préstamos",
+  "description": "Ahorro personal: cuentas con meta, préstamos y transferencias",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#c8c8d0",
